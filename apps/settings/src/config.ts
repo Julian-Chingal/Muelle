@@ -38,6 +38,10 @@ export interface Config {
   aiUsage: boolean;
   menuBarMusic: boolean;
   menuBarIslandStyle: IslandStyle;
+  /** A bell at the right end of the menu bar that opens the notification center. */
+  menuBarNotifications: boolean;
+  /** What the clock opens (an app, shortcut or URI); null for the notification center. */
+  menuBarClockTarget: string | null;
   accessoryBattery: boolean;
   showIndicators: boolean;
   showRecents: boolean;
@@ -74,6 +78,9 @@ export const setAutostart = (enabled: boolean) => invoke<void>("set_autostart", 
 /** The folder the user picks, or null if they cancel. */
 export const pickFolder = (current: string | null) =>
   invoke<string | null>("pick_folder", { current });
+/** An app or shortcut for the clock to open, or null if the user cancels. */
+export const pickClockTarget = (current: string | null, apps: string, all: string) =>
+  invoke<string | null>("pick_clock_target", { current, apps, all });
 export interface UpdateInfo {
   version: string;
   /** Release page with the notes, if the manifest has one. */

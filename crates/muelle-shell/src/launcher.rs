@@ -227,6 +227,21 @@ pub fn open_bluetooth() {
     let _ = open("ms-settings:bluetooth");
 }
 
+/// Power & battery in Settings (Power & sleep on Windows 10), as clicking the
+/// battery on macOS shows its power options (issue #55).
+pub fn open_power_settings() {
+    let _ = open("ms-settings:powersleep");
+}
+
+/// The list of available networks, as the Wi-Fi icon shows it on macOS,
+/// instead of all of quick settings (which the control center icon already
+/// opens, issue #55). Falls back to quick settings if the URI is unavailable.
+pub fn open_network_list() {
+    if open("ms-availablenetworks:").is_err() {
+        open_quick_settings();
+    }
+}
+
 /// Shows the desktop, or brings the windows back: what the taskbar's corner
 /// button does (Win+D).
 pub fn show_desktop() {
