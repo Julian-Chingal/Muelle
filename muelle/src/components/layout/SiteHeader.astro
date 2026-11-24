@@ -15,8 +15,8 @@ import { site } from "@/data/site";
     </a>
 
     <nav
-      aria-label="Sections"
-      class="hidden items-center gap-7 font-mono text-[12px] tracking-[0.08em] text-mute uppercase md:flex"
+      aria-label="Main navigation"
+      class="hidden items-center gap-7 font-mono text-[12px] tracking-[0.08em] text-mute uppercase lg:flex"
     >
       {
         navigation.map(({ label, href }) => (
@@ -50,7 +50,7 @@ import { site } from "@/data/site";
         aria-expanded="false"
         aria-controls="mobile-menu"
         aria-label="Open menu"
-        class="ml-1 squircle-pill p-2 text-fg transition-colors hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary md:hidden"
+        class="ml-1 squircle-pill p-2 text-fg transition-colors hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary lg:hidden"
       >
         <Icon name="menu" size={20} class="icon-menu" />
         <Icon name="close" size={20} class="icon-close hidden" />
@@ -58,7 +58,7 @@ import { site } from "@/data/site";
     </div>
   </Container>
 
-  <div id="mobile-menu" hidden class="border-t border-line md:hidden">
+  <div id="mobile-menu" hidden class="border-t border-line lg:hidden">
     <Container class="flex flex-col gap-1 py-4">
       {
         navigation.map(({ label, href }) => (

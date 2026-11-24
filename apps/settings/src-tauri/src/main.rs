@@ -94,6 +94,26 @@ async fn pick_folder(
     .map_err(|error| error.to_string())
 }
 
+/// An app, shortcut or file for the menu bar clock to open. `apps` and `all`
+/// name the dialog's file types in the language Settings shows.
+#[tauri::command]
+async fn pick_clock_target(
+    window: tauri::WebviewWindow,
+    current: Option<String>,
+    apps: String,
+    all: String,
+) -> Result<Option<String>, String> {
+    let owner = window
+        .hwnd()
+        .map(|hwnd| hwnd.0 as isize)
+        .unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || {
+        muelle_shell::folder::pick_file(owner, current.as_deref(), &apps, &all)
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 async fn get_autostart() -> Result<bool, String> {
     let dock = dock_exe().map_err(|error| error.to_string())?;
@@ -342,6 +362,7 @@ fn main() {
             windows_preferences,
             open_animation_settings,
             pick_folder,
+            pick_clock_target,
             check_update,
             install_update,
             open_release_notes,

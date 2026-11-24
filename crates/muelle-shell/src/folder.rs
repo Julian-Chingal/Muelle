@@ -13,14 +13,15 @@ use windows::{
         },
         UI::{
             Shell::{
-                FOS_FORCEFILESYSTEM, FOS_PICKFOLDERS, FileOpenDialog, IFileOpenDialog, IShellItem,
-                SHCreateItemFromParsingName, SHFILEINFOW, SHGFI_DISPLAYNAME, SHGFI_ICON,
-                SHGFI_SMALLICON, SHGetFileInfoW, SIGDN_FILESYSPATH, StrCmpLogicalW,
+                Common::COMDLG_FILTERSPEC, FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM,
+                FOS_NODEREFERENCELINKS, FOS_PICKFOLDERS, FileOpenDialog, IFileOpenDialog,
+                IShellItem, SHCreateItemFromParsingName, SHFILEINFOW, SHGFI_DISPLAYNAME,
+                SHGFI_ICON, SHGFI_SMALLICON, SHGetFileInfoW, SIGDN_FILESYSPATH, StrCmpLogicalW,
             },
             WindowsAndMessaging::DestroyIcon,
         },
     },
-    core::HSTRING,
+    core::{HSTRING, PCWSTR, w},
 };
 
 use crate::icons::{IconImage, icon_image};
@@ -118,9 +119,36 @@ fn shell_info(path: &str) -> (Option<String>, Option<IconImage>) {
 /// Initializes COM on the calling thread for the duration of the call.
 #[must_use]
 pub fn pick(owner: isize, initial: Option<&str>) -> Option<String> {
+    pick_with(owner, initial, Pick::Folder)
+}
+
+/// Asks for an app, a shortcut or any other file with the standard Windows
+/// dialog, opened next to `initial`; `None` if the user cancels. A shortcut
+/// is returned as itself, not its target, so its arguments are kept (as for
+/// pins, issue #8). `apps` and `all` name the dialog's two file types: apps
+/// and shortcuts, and every file.
+///
+/// Initializes COM on the calling thread for the duration of the call.
+#[must_use]
+pub fn pick_file(owner: isize, initial: Option<&str>, apps: &str, all: &str) -> Option<String> {
+    pick_with(owner, initial, Pick::File { apps, all })
+}
+
+/// What the standard dialog asks for.
+#[derive(Clone, Copy)]
+enum Pick<'a> {
+    Folder,
+    /// Names of the two file types listed.
+    File {
+        apps: &'a str,
+        all: &'a str,
+    },
+}
+
+fn pick_with(owner: isize, initial: Option<&str>, kind: Pick<'_>) -> Option<String> {
     // SAFETY: Balanced below, once every COM object is released.
     let com = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-    let picked = pick_in_apartment(owner, initial);
+    let picked = pick_in_apartment(owner, initial, kind);
     if com.is_ok() {
         // SAFETY: Balances the successful initialization above.
         unsafe { CoUninitialize() };
@@ -128,16 +156,53 @@ pub fn pick(owner: isize, initial: Option<&str>) -> Option<String> {
     picked.ok()
 }
 
-fn pick_in_apartment(owner: isize, initial: Option<&str>) -> windows::core::Result<String> {
+/// The folder a dialog opens in: `initial` itself for a folder, the folder
+/// holding it for a file. `None` for anything that is not a path (a URI).
+fn start_folder(initial: &str, kind: Pick<'_>) -> Option<String> {
+    match kind {
+        Pick::Folder => Some(initial.to_owned()),
+        Pick::File { .. } => std::path::Path::new(initial)
+            .parent()
+            .filter(|parent| parent.is_absolute())
+            .map(|parent| parent.to_string_lossy().into_owned()),
+    }
+}
+
+fn pick_in_apartment(
+    owner: isize,
+    initial: Option<&str>,
+    kind: Pick<'_>,
+) -> windows::core::Result<String> {
     // SAFETY: COM calls with arguments that live for each call; the path the
     // dialog returns is freed once copied.
     unsafe {
         let dialog: IFileOpenDialog =
             CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)?;
-        dialog.SetOptions(dialog.GetOptions()? | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM)?;
-        if let Some(start) = initial.and_then(|path| {
-            SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from(path), None).ok()
-        }) {
+        let options = dialog.GetOptions()? | FOS_FORCEFILESYSTEM;
+        match kind {
+            Pick::Folder => dialog.SetOptions(options | FOS_PICKFOLDERS)?,
+            Pick::File { apps, all } => {
+                dialog.SetOptions(options | FOS_FILEMUSTEXIST | FOS_NODEREFERENCELINKS)?;
+                let (apps, all) = (HSTRING::from(apps), HSTRING::from(all));
+                let types = [
+                    COMDLG_FILTERSPEC {
+                        pszName: PCWSTR(apps.as_ptr()),
+                        pszSpec: w!("*.exe;*.lnk;*.url;*.appref-ms"),
+                    },
+                    COMDLG_FILTERSPEC {
+                        pszName: PCWSTR(all.as_ptr()),
+                        pszSpec: w!("*.*"),
+                    },
+                ];
+                dialog.SetFileTypes(&types)?;
+            }
+        }
+        if let Some(start) = initial
+            .and_then(|path| start_folder(path, kind))
+            .and_then(|path| {
+                SHCreateItemFromParsingName::<_, _, IShellItem>(&HSTRING::from(path), None).ok()
+            })
+        {
             let _ = dialog.SetFolder(&start);
         }
         // Cancelling is an error here, and ends the pick.
@@ -160,6 +225,21 @@ mod tests {
             is_folder,
             icon: None,
         }
+    }
+
+    #[test]
+    fn a_file_dialog_opens_where_the_current_file_is_and_ignores_uris() {
+        let file = Pick::File { apps: "", all: "" };
+        assert_eq!(
+            start_folder(r"C:\Apps\Calendar.lnk", file).as_deref(),
+            Some(r"C:\Apps")
+        );
+        assert_eq!(start_folder("outlookcal:", file), None);
+        assert_eq!(start_folder("ms-clock:", file), None);
+        assert_eq!(
+            start_folder(r"D:\Racc", Pick::Folder).as_deref(),
+            Some(r"D:\Racc")
+        );
     }
 
     #[test]

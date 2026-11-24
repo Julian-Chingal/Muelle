@@ -97,6 +97,15 @@ pub struct Config {
     pub menu_bar_music: bool,
     /// Visual style and placement of the music and AI usage island in the menu bar.
     pub menu_bar_island_style: IslandStyle,
+    /// A bell at the right end of the menu bar that opens the Windows
+    /// notification center (issue #55). Off by default, so the bar looks as
+    /// it always did; the clock opens notifications either way unless
+    /// `menu_bar_clock_target` says otherwise.
+    pub menu_bar_notifications: bool,
+    /// What clicking the clock opens: an app, a shortcut, a document or a URI
+    /// (e.g. the Clock app or a calendar). `None` keeps the notification
+    /// center and calendar, as on the Windows taskbar.
+    pub menu_bar_clock_target: Option<String>,
     /// Opt-in peripheral monitoring. Off means no accessory reader or queries.
     pub accessory_battery: bool,
     /// The dot under apps that have windows open.
@@ -294,6 +303,10 @@ impl Config {
             .shortcuts_folder
             .map(|folder| folder.trim().to_owned())
             .filter(|folder| !folder.is_empty());
+        self.menu_bar_clock_target = self
+            .menu_bar_clock_target
+            .map(|target| target.trim().to_owned())
+            .filter(|target| !target.is_empty());
         self
     }
 
@@ -338,6 +351,8 @@ impl Default for Config {
             ai_usage: true,
             menu_bar_music: true,
             menu_bar_island_style: IslandStyle::Notch,
+            menu_bar_notifications: false,
+            menu_bar_clock_target: None,
             accessory_battery: false,
             show_indicators: true,
             show_recents: true,
@@ -885,6 +900,44 @@ mod tests {
             ..Config::default()
         };
         assert_eq!(config.sanitized().shortcuts_folder, None);
+    }
+
+    #[test]
+    fn the_clock_opens_notifications_and_the_bell_is_off_unless_chosen()
+    -> Result<(), serde_json::Error> {
+        let older: Config = serde_json::from_str(r#"{"iconSize":56}"#)?;
+        assert!(!older.menu_bar_notifications);
+        assert_eq!(older.menu_bar_clock_target, None);
+        let chosen: Config = serde_json::from_str(
+            r#"{"menuBarNotifications":true,"menuBarClockTarget":"C:\\Apps\\Calendar.lnk"}"#,
+        )?;
+        assert!(chosen.menu_bar_notifications);
+        assert_eq!(
+            chosen.menu_bar_clock_target.as_deref(),
+            Some(r"C:\Apps\Calendar.lnk")
+        );
+        assert_eq!(
+            serde_json::from_str::<Config>(&serde_json::to_string(&chosen)?)?,
+            chosen
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn sanitized_should_forget_a_blank_clock_target() {
+        let config = Config {
+            menu_bar_clock_target: Some(" \t".into()),
+            ..Config::default()
+        };
+        assert_eq!(config.sanitized().menu_bar_clock_target, None);
+        let uri = Config {
+            menu_bar_clock_target: Some(" outlookcal: ".into()),
+            ..Config::default()
+        };
+        assert_eq!(
+            uri.sanitized().menu_bar_clock_target.as_deref(),
+            Some("outlookcal:")
+        );
     }
 
     #[test]

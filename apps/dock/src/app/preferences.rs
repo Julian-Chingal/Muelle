@@ -313,6 +313,7 @@ impl App {
     pub(super) fn apply_menu_bar_setting(&mut self) {
         let widgets = MenuBarWidgets {
             island_style: self.config.menu_bar_island_style,
+            notifications: self.config.menu_bar_notifications,
         };
         if !self.config.menu_bar {
             self.menubar = None;
@@ -328,6 +329,7 @@ impl App {
             .ok();
         }
         if let Some(bar) = &mut self.menubar {
+            bar.set_clock_target(self.config.menu_bar_clock_target.as_deref());
             let applied = bar
                 .set_auto_hide(self.config.menu_bar_auto_hide)
                 .and_then(|()| bar.set_usage_enabled(&self.gfx, self.config.ai_usage))

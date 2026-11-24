@@ -26,6 +26,7 @@ import {
   loadWallpaperPreview,
   openReleaseNotes,
   openRepository,
+  pickClockTarget,
   pickFolder,
   saveConfig,
   setAutostart,
@@ -636,6 +637,25 @@ export function App() {
                     checked={config.accessoryBattery}
                     onChange={(accessoryBattery) => update({ accessoryBattery })}
                   />
+                </SubRow>
+                <SubRow label={t.menuBarNotifications} hint={t.menuBarNotificationsHint} open={config.menuBar}>
+                  <Toggle
+                    label={t.menuBarNotifications}
+                    checked={config.menuBarNotifications ?? false}
+                    onChange={(menuBarNotifications) => update({ menuBarNotifications })}
+                  />
+                </SubRow>
+                <SubRow label={t.clockTarget} hint={config.menuBarClockTarget ?? t.clockTargetDefault} open={config.menuBar}>
+                  <div className="push-group">
+                    {config.menuBarClockTarget ? (
+                      <button type="button" className="push" onClick={() => update({ menuBarClockTarget: null })}>
+                        {t.clockTargetReset}
+                      </button>
+                    ) : null}
+                    <button type="button" className="push" onClick={chooseClockTarget}>
+                      {t.clockTargetChoose}
+                    </button>
+                  </div>
                 </SubRow>
               </Card>
             </>

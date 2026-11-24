@@ -161,13 +161,21 @@ pub(crate) mod glyph {
     pub const MOUSE: char = '\u{E962}';
     pub const HEADSET: char = '\u{E95B}';
     pub const BLUETOOTH: char = '\u{E702}';
+    /// The bell of the Windows 11 notification center ("Ringer").
+    pub const NOTIFICATIONS: char = '\u{EA8F}';
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
     AccessoryIndicator,
     QuickSettings,
     Notifications,
+    /// The clock: the user's own target, or the notification center.
+    Clock,
+    /// The battery: power settings.
+    Power,
+    /// The Wi-Fi, Ethernet or offline icon: the list of networks.
+    Network,
     Sound,
     Search,
     TaskView,
@@ -182,12 +190,15 @@ enum Action {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MenuBarWidgets {
     pub island_style: IslandStyle,
+    /// The notification bell at the right end (`Config::menu_bar_notifications`).
+    pub notifications: bool,
 }
 
 impl Default for MenuBarWidgets {
     fn default() -> Self {
         Self {
             island_style: IslandStyle::Notch,
+            notifications: false,
         }
     }
 }
@@ -483,6 +494,9 @@ pub struct MenuBar {
     bounds: RECT,
     status: Status,
     widgets: MenuBarWidgets,
+    /// What the clock opens (`Config::menu_bar_clock_target`). Not drawn, so
+    /// it lives outside `widgets` and changing it redraws nothing.
+    clock_target: Option<String>,
     usage: Option<UsageMonitor>,
     /// Where each provider sits in the closed island, as screen x.
     usage_anchors: Vec<(Provider, i32)>,
@@ -1159,6 +1173,7 @@ impl MenuBar {
                 battery_percentage: false,
             },
             widgets,
+            clock_target: None,
             usage: usage_enabled.then(|| UsageMonitor::new(hwnd.0 as isize, USAGE_CHANGED)),
             usage_anchors: Vec::new(),
             cue: None,
@@ -1302,6 +1317,13 @@ impl MenuBar {
         }
         self.widgets = widgets;
         self.refresh(gfx)
+    }
+
+    /// What clicking the clock opens; `None` for the notification center.
+    pub fn set_clock_target(&mut self, target: Option<&str>) {
+        if self.clock_target.as_deref() != target {
+            self.clock_target = target.map(str::to_owned);
+        }
     }
 
     /// The pointer reached the top edge or left the bar.
@@ -1848,6 +1870,14 @@ impl MenuBar {
             Some(Action::AccessoryIndicator) => {}
             Some(Action::QuickSettings) => launcher::open_quick_settings(),
             Some(Action::Notifications) => launcher::open_notifications(),
+            Some(Action::Clock) => match &self.clock_target {
+                // A target that no longer opens (an uninstalled app) falls
+                // back to what the clock always opened.
+                Some(target) if launcher::open(target).is_ok() => {}
+                _ => launcher::open_notifications(),
+            },
+            Some(Action::Power) => launcher::open_power_settings(),
+            Some(Action::Network) => launcher::open_network_list(),
             Some(Action::Sound) => launcher::open_sound(),
             Some(Action::Search) => launcher::open_search(),
             Some(Action::TaskView) => launcher::open_task_view(),
@@ -2099,13 +2129,19 @@ impl MenuBar {
         let mut right = width - px(SIDE_MARGIN);
         let status = look.status;
         let symbol = |layers: &[(char, f32)]| gfx.glyph_brush(layers, scale, ink);
-        let mut items: Vec<(LabelBrush, Action)> = vec![
-            (
-                gfx.text_brush(&look.clock, scale, false, ink)?,
+        let mut items: Vec<(LabelBrush, Action)> = Vec::new();
+        // The notification bell, when chosen, takes the very end of the bar.
+        if look.widgets.notifications {
+            items.push((
+                symbol(&[(glyph::NOTIFICATIONS, 1.0)])?,
                 Action::Notifications,
-            ),
-            (gfx.control_center_brush(scale, ink)?, Action::QuickSettings),
-        ];
+            ));
+        }
+        items.push((
+            gfx.text_brush(&look.clock, scale, false, ink)?,
+            Action::Clock,
+        ));
+        items.push((gfx.control_center_brush(scale, ink)?, Action::QuickSettings));
         // Privacy indicators, as the Windows tray shows them: something is
         // using the microphone or camera right now.
         let privacy = status.privacy;
@@ -2123,18 +2159,20 @@ impl MenuBar {
         if status.bluetooth_on {
             items.push((symbol(&[(glyph::BLUETOOTH, 1.0)])?, Action::Bluetooth));
         }
+        // The control center already opens all of quick settings: the network
+        // icon goes straight to the list of networks (issue #55).
         match status.network {
             Network::Wifi { bars, has_internet } => {
                 items.push((
                     gfx.wifi_brush(bars, has_internet, scale, ink)?,
-                    Action::QuickSettings,
+                    Action::Network,
                 ));
             }
             Network::Ethernet => {
-                items.push((symbol(&[(glyph::ETHERNET, 1.0)])?, Action::QuickSettings));
+                items.push((symbol(&[(glyph::ETHERNET, 1.0)])?, Action::Network));
             }
             Network::Offline => {
-                items.push((symbol(&[(glyph::OFFLINE, 1.0)])?, Action::QuickSettings));
+                items.push((symbol(&[(glyph::OFFLINE, 1.0)])?, Action::Network));
             }
         }
         if let Some(volume) = status.volume {
@@ -2155,7 +2193,7 @@ impl MenuBar {
             }
             items.push((
                 gfx.battery_brush(battery.percent, battery.charging, battery.saver, scale, ink)?,
-                Action::QuickSettings,
+                Action::Power,
             ));
         }
         let mut accessory_labels = Vec::new();
@@ -4126,27 +4164,23 @@ mod island_tests {
                     usize::from(on)
                 );
             }
-            // The battery is the last QuickSettings zone. Its percentage must
-            // add label width, without introducing another clickable control.
-            let battery = bar
-                .zones
-                .iter()
-                .rev()
-                .find(|(_, _, a)| *a == Action::QuickSettings)
-                .context("battery zone")?;
+            // The battery is the one Power zone. Its percentage must add
+            // label width, without introducing another clickable control.
+            let mut power = bar.zones.iter().filter(|(_, _, a)| *a == Action::Power);
+            let battery = power.next().context("battery zone")?;
+            assert!(power.next().is_none());
             battery_width[usize::from(look.status.battery_percentage)] = battery.1 - battery.0;
         }
         assert!(battery_width[1] > battery_width[0]);
         // No phantom battery or percentage on a desktop without a battery.
         look.battery = None;
         bar.apply_look(&gfx, look)?;
-        assert_eq!(
-            bar.zones
-                .iter()
-                .filter(|(_, _, a)| *a == Action::QuickSettings)
-                .count(),
-            2
-        );
+        let count = |action: Action| bar.zones.iter().filter(|(_, _, a)| *a == action).count();
+        // Only the control center opens all of quick settings; the network
+        // icon has its own list (issue #55).
+        assert_eq!(count(Action::QuickSettings), 1);
+        assert_eq!(count(Action::Network), 1);
+        assert_eq!(count(Action::Power), 0);
 
         // The native registry handler reads the real Windows values without
         // replacing the media/provider snapshot or resetting the clock timer.
@@ -4157,6 +4191,60 @@ mod island_tests {
             current.status.battery_percentage,
             status::battery_percentage_enabled()
         );
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "Hidden compositor fixture; synthetic preferences, nothing is opened"]
+    fn native_notification_bell_takes_the_right_end_only_when_chosen() -> Result<()> {
+        use anyhow::Context;
+        use windows::Win32::System::WinRT::{
+            CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT,
+            DispatcherQueueOptions,
+        };
+        let _queue = unsafe {
+            CreateDispatcherQueueController(DispatcherQueueOptions {
+                dwSize: size_of::<DispatcherQueueOptions>() as u32,
+                threadType: DQTYPE_THREAD_CURRENT,
+                apartmentType: DQTAT_COM_STA,
+            })?
+        };
+        let gfx = Gfx::new()?;
+        let mut bar = MenuBar::create(&gfx, false, false, true, MenuBarWidgets::default())?;
+        bar.set_visible(false)?;
+        let mut look = bar.look.clone().context("initial look")?;
+        look.screen = RECT {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        };
+        for notifications in [false, true, false] {
+            look.widgets.notifications = notifications;
+            bar.apply_look(&gfx, look.clone())?;
+            // Zones are pushed from the right edge inward.
+            let order: Vec<Action> = bar.zones.iter().map(|(_, _, a)| *a).collect();
+            let expected: &[Action] = if notifications {
+                &[Action::Notifications, Action::Clock, Action::QuickSettings]
+            } else {
+                &[Action::Clock, Action::QuickSettings]
+            };
+            assert_eq!(order.get(..expected.len()), Some(expected));
+            assert_eq!(
+                order
+                    .iter()
+                    .filter(|a| **a == Action::Notifications)
+                    .count(),
+                usize::from(notifications)
+            );
+        }
+        // The clock target is not drawn: choosing one keeps the same look.
+        let drawn = bar.look.clone();
+        bar.set_clock_target(Some("ms-clock:"));
+        assert_eq!(bar.clock_target.as_deref(), Some("ms-clock:"));
+        assert!(bar.look == drawn);
+        bar.set_clock_target(None);
+        assert_eq!(bar.clock_target, None);
         Ok(())
     }
 

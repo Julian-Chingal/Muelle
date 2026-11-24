@@ -6,6 +6,7 @@ export const navigation = [
   { label: "Mascot", href: "/#crab" },
   { label: "Settings", href: "/#customize" },
   { label: "Reversible", href: "/#safety" },
+  { label: "About", href: "/about" },
 ] as const;
 
 export const footerGroups = [

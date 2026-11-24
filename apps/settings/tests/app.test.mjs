@@ -46,7 +46,7 @@ function fixture(section = "menubar", config = {}, save = async () => {}, galler
   let stateIndex = 0, refIndex = 0, nextTimer = 0, close;
   const loaded = { ...base, ...config };
   const gallery = section === "gallery";
-  const wallpaperCalls = [], wallpaperPreviews = [];
+  const wallpaperCalls = [], wallpaperPreviews = [], clockPicks = [];
   const browser = {
     addEventListener(event, callback) { assert.ok(!listeners.has(event)); listeners.set(event, callback); },
     removeEventListener(event) { listeners.delete(event); },
@@ -82,6 +82,7 @@ function fixture(section = "menubar", config = {}, save = async () => {}, galler
         case "wallpaper_preview": return null;
         case "wallpaper_selection": return typeof galleryNative.selection === "function" ? galleryNative.selection() : galleryNative.selection ?? null;
         case "apply_wallpaper": wallpaperCalls.push({ ...args }); return galleryNative.apply?.(args.id);
+        case "pick_clock_target": clockPicks.push({ ...args }); return galleryNative.clockTarget ?? null;
         case "default_config": return { ...base, autoHide: false, smartHide: true };
         case "set_config": calls.push({ ...args.patch }); return save(args.patch);
         default: throw new Error(`Unexpected native call: ${command}`);
@@ -112,7 +113,7 @@ function fixture(section = "menubar", config = {}, save = async () => {}, galler
   }
   function find(predicate) { const node = [...elements(render())].find(predicate); assert.ok(node); return node; }
   return {
-    calls, timers, render, themes: nativeWindow.themes, wallpaperCalls, wallpaperPreviews,
+    calls, timers, render, themes: nativeWindow.themes, wallpaperCalls, wallpaperPreviews, clockPicks,
     external(patch) { Object.assign(loaded, patch); },
     async focus() { listeners.get("focus")?.(); await settle(); },
     async mount() { render(); const cleanup = effects.map((effect) => effect()); await settle(); return () => cleanup.forEach((fn) => fn?.()); },
@@ -226,13 +227,56 @@ test("retired Windows status-item overrides expose no controls and create no sav
       const controls = [...elements(view.body())].filter((node) => "checked" in node.props);
       assert.deepEqual(controls.map((node) => node.props.label), [texts[language].menuBarShow,
         texts[language].menuBarAutoHide, texts[language].menuBarMusic, texts[language].aiUsage,
-        texts[language].accessoryBattery]);
+        texts[language].accessoryBattery, texts[language].menuBarNotifications]);
       view.fire(60);
       await settle();
       assert.deepEqual(view.calls, []);
       assert.equal(await view.close(), false);
     } finally { unmount(); }
   }
+});
+
+test("the notifications button is opt-in and the clock target can be chosen and reset", async () => {
+  const picked = "C:\Apps\Calendar.lnk";
+  const native = { clockTarget: picked };
+  const view = fixture("menubar", { menuBarNotifications: undefined, menuBarClockTarget: undefined }, async () => {}, native);
+  const bell = () => [...elements(view.body())].find((node) =>
+    node.props.label === texts.en.menuBarNotifications && "checked" in node.props).props.checked;
+  const markup = () => renderToStaticMarkup(view.body());
+  const unmount = await view.mount();
+  try {
+    assert.equal(bell(), false);
+    assert.match(markup(), new RegExp(texts.en.clockTargetDefault));
+    assert.doesNotMatch(markup(), new RegExp(texts.en.clockTargetReset));
+    view.change(texts.en.menuBarNotifications, true);
+    view.fire(60);
+    await settle();
+    assert.equal(bell(), true);
+    assert.deepEqual(view.calls, [{ menuBarNotifications: true }]);
+
+    view.button(texts.en.clockTargetChoose);
+    await settle();
+    view.fire(60);
+    await settle();
+    assert.deepEqual(view.clockPicks, [{ current: null, apps: texts.en.clockTargetApps, all: texts.en.clockTargetAllFiles }]);
+    assert.deepEqual(view.calls.at(-1), { menuBarClockTarget: picked });
+    assert.ok(markup().includes(picked));
+
+    // Cancelling the dialog changes nothing.
+    native.clockTarget = null;
+    view.button(texts.en.clockTargetChoose);
+    await settle();
+    view.fire(60);
+    await settle();
+    assert.equal(view.calls.length, 2);
+    assert.equal(view.clockPicks.at(-1).current, picked);
+
+    view.button(texts.en.clockTargetReset);
+    view.fire(60);
+    await settle();
+    assert.deepEqual(view.calls.at(-1), { menuBarClockTarget: null });
+    assert.match(markup(), new RegExp(texts.en.clockTargetDefault));
+  } finally { unmount(); }
 });
 
 test("other workspaces are opt-in and save without changing other window preferences", async () => {
