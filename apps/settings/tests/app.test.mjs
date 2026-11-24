@@ -237,7 +237,7 @@ test("retired Windows status-item overrides expose no controls and create no sav
 });
 
 test("the notifications button is opt-in and the clock target can be chosen and reset", async () => {
-  const picked = "C:\Apps\Calendar.lnk";
+  const picked = "C:\\Apps\\Calendar.lnk";
   const native = { clockTarget: picked };
   const view = fixture("menubar", { menuBarNotifications: undefined, menuBarClockTarget: undefined }, async () => {}, native);
   const bell = () => [...elements(view.body())].find((node) =>

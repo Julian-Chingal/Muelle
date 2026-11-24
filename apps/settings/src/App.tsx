@@ -261,6 +261,11 @@ export function App() {
       .then((folder) => folder && update({ shortcutsFolder: folder }))
       .catch(() => setFailed(true));
   };
+  const chooseClockTarget = () => {
+    pickClockTarget(config.menuBarClockTarget ?? null, t.clockTargetApps, t.clockTargetAllFiles)
+      .then((target) => target && update({ menuBarClockTarget: target }))
+      .catch(() => setFailed(true));
+  };
   const ownMenuBarTheme = config.menuBarAppearance != null;
   const themeChoices = THEMES.map((theme) => ({
     value: theme,
