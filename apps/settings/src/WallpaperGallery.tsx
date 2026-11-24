@@ -7,9 +7,6 @@ interface WallpaperTexts {
   wallpaperGalleryTitle: string;
   wallpaperGalleryHint: string;
   wallpaperApplyLabel: string;
-  wallpaperApplying: string;
-  wallpaperApplied: string;
-  wallpaperApplyError: string;
   wallpaperNames: readonly string[];
 }
 
@@ -17,8 +14,6 @@ interface WallpaperTexts {
 export function WallpaperGallery({ texts, onApplied }: { texts: WallpaperTexts; onApplied: (preview: string) => void }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [pending, setPending] = useState<number | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [applied, setApplied] = useState(false);
   const busy = useRef(false);
   const revision = useRef(0);
   const mounted = useRef(true);
@@ -39,15 +34,13 @@ export function WallpaperGallery({ texts, onApplied }: { texts: WallpaperTexts; 
     busy.current = true;
     revision.current += 1;
     setPending(id);
-    setFailed(false);
-    setApplied(false);
     try {
       await applyWallpaper(id, preview);
       // Keep other Settings previews current even if the user has navigated away.
       onApplied(preview);
-      if (mounted.current) { setSelected(id); setApplied(true); }
-    } catch {
-      if (mounted.current) setFailed(true);
+      if (mounted.current) setSelected(id);
+    } catch (error) {
+      console.error("Failed to apply wallpaper:", error);
     } finally {
       busy.current = false;
       if (mounted.current) setPending(null);
@@ -74,8 +67,5 @@ export function WallpaperGallery({ texts, onApplied }: { texts: WallpaperTexts; 
         </button>;
       })}
     </div>
-    <p className="wallpaper-status" role={failed ? "alert" : "status"}>
-      {pending !== null ? texts.wallpaperApplying : failed ? texts.wallpaperApplyError : applied ? texts.wallpaperApplied : ""}
-    </p>
   </Card>;
 }

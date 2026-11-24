@@ -8,25 +8,27 @@ use std::{cell::RefCell, ffi::c_void, ptr};
 use muelle_shell::{
     folder::{self, FolderItem},
     icons::IconImage,
+    system,
 };
 use windows::{
     Win32::{
-        Foundation::{HWND, LPARAM, POINT, WPARAM},
+        Foundation::{HWND, LPARAM, POINT, RECT, WPARAM},
         Graphics::Gdi::{
             BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateDIBSection, DIB_RGB_COLORS, DeleteObject,
             HBITMAP,
         },
         UI::WindowsAndMessaging::{
             CreatePopupMenu, DestroyMenu, GetForegroundWindow, GetMenuItemCount, HMENU,
-            InsertMenuItemW, MENUITEMINFOW, MFS_DISABLED, MIIM_BITMAP, MIIM_ID, MIIM_STATE,
-            MIIM_STRING, MIIM_SUBMENU, PostMessageW, SetForegroundWindow, TPM_RETURNCMD,
-            TPM_RIGHTBUTTON, TrackPopupMenuEx, WM_NULL,
+            InsertMenuItemW, MENUINFO, MENUITEMINFOW, MFS_DISABLED, MIIM_BITMAP, MIIM_ID,
+            MIIM_STATE, MIIM_STRING, MIIM_SUBMENU, MIM_MAXHEIGHT, PostMessageW,
+            SetForegroundWindow, SetMenuInfo, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx,
+            WM_NULL,
         },
     },
     core::{HSTRING, PWSTR},
 };
 
-use crate::strings::text;
+use crate::{menu::Placement, strings::text};
 
 /// Items listed per folder; past this, a huge folder would make its menu
 /// slow to open and too long to use.
@@ -43,6 +45,8 @@ struct Open {
     commands: Vec<String>,
     /// The items' icons, freed when the menu closes.
     bitmaps: Vec<HBITMAP>,
+    /// Tallest each list may be, in pixels (see [`room`]); 0 for no limit.
+    max_height: u32,
 }
 
 impl Drop for Open {
@@ -72,12 +76,29 @@ pub fn show(
     folder: &str,
     anchor: POINT,
     dark: bool,
-    placement: crate::menu::Placement,
+    placement: Placement,
 ) -> Option<String> {
     crate::menu::apply_theme(dark);
     // SAFETY: The menu is destroyed below, with its submenus.
     let root = unsafe { CreatePopupMenu() }.ok()?;
-    OPEN.with_borrow_mut(|open| *open = Some(Open::default()));
+    let max_height = system::monitor_at(anchor).map_or(0, |monitor| {
+        let work = RECT {
+            left: monitor.work_left,
+            top: monitor.work_top,
+            right: monitor.work_right,
+            bottom: monitor.work_bottom,
+        };
+        room(placement, anchor, work)
+    });
+    OPEN.with_borrow_mut(|open| {
+        *open = Some(Open {
+            pending: Vec::new(),
+            commands: Vec::new(),
+            bitmaps: Vec::new(),
+            max_height,
+        });
+    });
+    limit_height(root);
     fill(root, folder);
 
     // SAFETY: Calls on our own menu and window; as for the dock's native
@@ -162,6 +183,7 @@ fn add_item(menu: HMENU, item: FolderItem) {
         let Ok(submenu) = (unsafe { CreatePopupMenu() }) else {
             return;
         };
+        limit_height(submenu);
         info.fMask |= MIIM_SUBMENU;
         info.hSubMenu = submenu;
         OPEN.with_borrow_mut(|open| {
@@ -178,6 +200,41 @@ fn add_item(menu: HMENU, item: FolderItem) {
         });
     }
     append(menu, &info);
+}
+
+/// How tall a list may be: the space between the anchor and the far edge of
+/// the work area, which already leaves out the menu bar and the dock.
+///
+/// Windows lets a long menu grow to the whole screen and gives it scroll
+/// arrows at both ends, but the dock and the menu bar stay above it: they
+/// covered those arrows and the last items could not be reached (issue #56).
+/// Kept within this room, the arrows show and scroll the list on hover, as
+/// in any Windows menu.
+fn room(placement: Placement, anchor: POINT, work: RECT) -> u32 {
+    let height = match placement {
+        Placement::Above => anchor.y - work.top,
+        Placement::Below => work.bottom - anchor.y,
+        Placement::Left | Placement::Right => work.bottom - work.top,
+    };
+    u32::try_from(height).unwrap_or(0)
+}
+
+/// Applies [`room`] to `menu`, the root list or a folder's submenu.
+fn limit_height(menu: HMENU) {
+    let max_height = OPEN.with_borrow(|open| open.as_ref().map_or(0, |open| open.max_height));
+    if max_height == 0 {
+        return;
+    }
+    let info = MENUINFO {
+        cbSize: size_of::<MENUINFO>() as u32,
+        fMask: MIM_MAXHEIGHT,
+        cyMax: max_height,
+        ..Default::default()
+    };
+    // SAFETY: Our own menu; `info` lives for the call.
+    unsafe {
+        let _ = SetMenuInfo(menu, &info);
+    }
 }
 
 /// A line that cannot be chosen: the folder is empty or unavailable.
@@ -251,6 +308,25 @@ fn bitmap_of(icon: &IconImage) -> Option<HBITMAP> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lists_fit_between_the_menu_bar_and_the_dock() {
+        let work = RECT {
+            left: 0,
+            top: 35,
+            right: 1920,
+            bottom: 987,
+        };
+        let anchor = |x, y| POINT { x, y };
+        // Above an icon of a bottom dock: up to the menu bar.
+        assert_eq!(room(Placement::Above, anchor(960, 980), work), 945);
+        assert_eq!(room(Placement::Below, anchor(960, 100), work), 887);
+        // Beside an icon of a side dock: the whole height between them.
+        assert_eq!(room(Placement::Right, anchor(90, 500), work), 952);
+        assert_eq!(room(Placement::Left, anchor(1830, 500), work), 952);
+        // An anchor outside the work area leaves no room: no limit is set.
+        assert_eq!(room(Placement::Above, anchor(960, 20), work), 0);
+    }
 
     #[test]
     fn label_of_should_double_ampersands() {

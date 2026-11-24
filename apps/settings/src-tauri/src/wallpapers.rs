@@ -14,7 +14,12 @@ use windows::{
             CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree,
             CoUninitialize,
         },
-        UI::Shell::{DesktopWallpaper, IDesktopWallpaper},
+        UI::{
+            Shell::{DesktopWallpaper, IDesktopWallpaper},
+            WindowsAndMessaging::{
+                SPI_SETDESKWALLPAPER, SPIF_SENDCHANGE, SPIF_UPDATEINIFILE, SystemParametersInfoW,
+            },
+        },
     },
     core::{HSTRING, PCWSTR, PWSTR},
 };
@@ -206,13 +211,28 @@ pub async fn apply_wallpaper(id: u8) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
         apply_at(id, &cache_dir()?, |path| {
-            with_desktop(|desktop| {
-                let path = HSTRING::from(path.as_os_str());
-                // NULL selects all monitors. Windows persists and broadcasts the change.
-                unsafe { desktop.SetWallpaper(PCWSTR::null(), &path) }
-                    .map_err(|error| error.to_string())
-            })
-        })
+            let path = HSTRING::from(path.as_os_str());
+            // The gallery applies one image to the entire desktop. Use the
+            // persisted system setting and its normal shell notification:
+            // SetWallpaper(NULL) can return while DWM still samples the old
+            // wallpaper. This runs on a blocking worker, never the UI thread.
+            // SAFETY: SPI_SETDESKWALLPAPER reads the live, NUL-terminated path;
+            // the Win32 signature uses PVOID but does not modify that string.
+            unsafe {
+                SystemParametersInfoW(
+                    SPI_SETDESKWALLPAPER,
+                    0,
+                    Some(path.as_ptr().cast_mut().cast()),
+                    SPIF_UPDATEINIFILE | SPIF_SENDCHANGE,
+                )
+            }
+            .map_err(|error| error.to_string())
+        })?;
+        // The compositor's material keys do not include the wallpaper. Notify
+        // only after the system operation, rather than waiting for a later
+        // theme/colorization broadcast (which need not happen).
+        muelle_shell::dock_link::notify_wallpaper_changed();
+        Ok(())
     })
     .await
     .map_err(|error| error.to_string())?

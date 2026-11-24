@@ -197,6 +197,76 @@ pub fn visible_rect(hwnd: isize) -> Option<RECT> {
     Some(if framed.is_ok() { rect } else { whole })
 }
 
+/// How far a window's top edge (`visible`) must drop for its title bar to
+/// clear `strip`, the screen strip the menu bar keeps for itself; `None` when
+/// it is not under it.
+fn drop_below(visible: RECT, strip: RECT) -> Option<i32> {
+    let under = visible.top < strip.bottom
+        && visible.bottom > strip.top
+        && visible.left < strip.right
+        && visible.right > strip.left;
+    under.then_some(strip.bottom - visible.top)
+}
+
+/// Moves a window whose title bar sits under the menu bar's `strip` to just
+/// below it, as macOS keeps windows under its menu bar. The bar's reservation
+/// only places maximized windows and those Windows positions itself: an app
+/// may still open one at the very top of the screen, such as Firefox popups
+/// from `window.open()`, and the bar, always on top, then hid its title bar
+/// and caption buttons (issue #53).
+///
+/// Leaves alone maximized and minimized windows, windows without a title bar
+/// (full screen, borderless, popups of menus), and a window the user is
+/// still dragging: it moves once they let go.
+pub fn keep_below(hwnd: isize, strip: RECT) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GUI_INMOVESIZE, GUITHREADINFO, GetGUIThreadInfo, SWP_NOZORDER, WS_CAPTION, WS_CHILD,
+    };
+    let window = HWND(hwnd as *mut _);
+    // SAFETY: Read-only queries on a window handle; on a window that is gone
+    // they fail and nothing moves.
+    unsafe {
+        if !IsWindowVisible(window).as_bool()
+            || IsIconic(window).as_bool()
+            || IsZoomed(window).as_bool()
+            || is_cloaked(window)
+        {
+            return;
+        }
+        let style = GetWindowLongW(window, GWL_STYLE) as u32;
+        if style & WS_CAPTION.0 != WS_CAPTION.0 || style & WS_CHILD.0 != 0 {
+            return;
+        }
+        let mut gui = GUITHREADINFO {
+            cbSize: size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        let thread = GetWindowThreadProcessId(window, None);
+        if GetGUIThreadInfo(thread, &mut gui).is_ok() && gui.flags.contains(GUI_INMOVESIZE) {
+            return;
+        }
+    }
+    let Some(visible) = visible_rect(hwnd) else {
+        return;
+    };
+    let (Some(drop), Some((whole, _))) = (drop_below(visible, strip), screen_rect(hwnd)) else {
+        return;
+    };
+    // SAFETY: Moves another app's window without activating it or changing
+    // its size or z-order; asynchronous, so a hung app cannot block the dock.
+    unsafe {
+        let _ = SetWindowPos(
+            window,
+            None,
+            whole.left,
+            whole.top + drop,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS,
+        );
+    }
+}
+
 /// Where a window that has just started minimizing was on screen, which by
 /// then it no longer says itself: it is already at -32000.
 ///
@@ -709,6 +779,26 @@ pub fn request_close_window(hwnd: isize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_windows_under_the_menu_bar_drop_below_it() {
+        let rect = |left, top, right, bottom| RECT {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        let bar = rect(0, 0, 1920, 35);
+        // A popup opened at the top of the screen (issue #53).
+        assert_eq!(drop_below(rect(300, 0, 900, 700), bar), Some(35));
+        // Partly under it, or above the screen.
+        assert_eq!(drop_below(rect(300, 20, 900, 700), bar), Some(15));
+        assert_eq!(drop_below(rect(300, -40, 900, 700), bar), Some(75));
+        // Already below the bar, touching it, or on another monitor.
+        assert_eq!(drop_below(rect(300, 35, 900, 700), bar), None);
+        assert_eq!(drop_below(rect(300, 200, 900, 700), bar), None);
+        assert_eq!(drop_below(rect(2000, 0, 2600, 700), bar), None);
+    }
 
     #[test]
     fn workspace_cloaking_is_opt_in_without_exposing_app_or_inherited_cloaks() {

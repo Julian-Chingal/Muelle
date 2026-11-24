@@ -16,7 +16,7 @@ use windows::{
             Input::KeyboardAndMouse::{
                 INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP,
                 SendInput, VIRTUAL_KEY, VK_A, VK_B, VK_D, VK_ESCAPE, VK_LCONTROL, VK_LWIN, VK_N,
-                VK_RETURN, VK_S, VK_TAB, VK_V, VK_W,
+                VK_S, VK_SPACE, VK_TAB, VK_V, VK_W,
             },
             Shell::{SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW, ShellExecuteExW},
             WindowsAndMessaging::{
@@ -250,6 +250,9 @@ pub fn show_desktop() {
 
 /// How long the taskbar takes to put the focus on its notification area.
 const HIDDEN_ICONS_DELAY: Duration = Duration::from_millis(250);
+/// How long Win+B may take to give the taskbar the focus at all; past it the
+/// key that opens the flyout is not sent, since it would reach another app.
+const HIDDEN_ICONS_FOCUS_WAIT: Duration = Duration::from_millis(800);
 /// How long the flyout is kept under the arrow while Windows finishes
 /// opening it (it may place it again during its animation).
 const HIDDEN_ICONS_HOLD: Duration = Duration::from_millis(1200);
@@ -262,7 +265,10 @@ const OVERFLOW_CLASSES: [PCWSTR; 2] = [
 ];
 
 /// The notification area's hidden icons, the taskbar's "^" button: Win+B
-/// moves the focus to that button and Enter opens it. The taskbar itself
+/// moves the focus to that button and Space opens it. Not Enter: the button
+/// opens on Enter's key-down, the flyout then puts the focus on its first
+/// icon, and Enter's key-up started that app (issue #52). Space opens it on
+/// its key-up, once the key is over. The taskbar itself
 /// stays invisible while Muelle runs; only its flyout shows. Windows offers
 /// no other way: the button is not exposed while the taskbar is hidden.
 ///
@@ -296,10 +302,21 @@ pub fn toggle_hidden_icons(anchor: (i32, i32)) {
     // leave it there until Enter has opened the flyout.
     OPENING_HIDDEN_ICONS.store(true, Ordering::Relaxed);
     tap(&[VK_LWIN, VK_B]);
+    let pressed = Instant::now();
     // The rest waits on its own short-lived thread so the dock never sleeps.
     std::thread::spawn(move || {
-        std::thread::sleep(HIDDEN_ICONS_DELAY);
-        tap(&[VK_RETURN]);
+        // Space goes only to the taskbar: in any other window it would press
+        // whatever has the focus there.
+        // SAFETY: Read-only lookup of the foreground window.
+        while !crate::taskbar::is_taskbar(unsafe { GetForegroundWindow() }) {
+            if pressed.elapsed() >= HIDDEN_ICONS_FOCUS_WAIT {
+                OPENING_HIDDEN_ICONS.store(false, Ordering::Relaxed);
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        std::thread::sleep(HIDDEN_ICONS_DELAY.saturating_sub(pressed.elapsed()));
+        tap(&[VK_SPACE]);
         let until = Instant::now() + HIDDEN_ICONS_HOLD;
         while Instant::now() < until {
             if let Some(flyout) = open_overflow() {

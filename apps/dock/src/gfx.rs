@@ -1,6 +1,9 @@
 //! Graphics device connecting the Windows compositor to Direct2D, allowing
 //! icons and masks to be drawn on compositor surfaces.
 
+#[path = "gfx/backdrop.rs"]
+mod backdrop;
+
 use anyhow::{Context, Result};
 use muelle_core::frame::DockEdge;
 use muelle_shell::icons::IconImage;

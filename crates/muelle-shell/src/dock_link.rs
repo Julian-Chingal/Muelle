@@ -3,7 +3,10 @@
 use windows::{
     Win32::{
         Foundation::{LPARAM, WPARAM},
-        UI::WindowsAndMessaging::{FindWindowW, PostMessageW, RegisterWindowMessageW},
+        UI::WindowsAndMessaging::{
+            FindWindowW, PostMessageW, RegisterWindowMessageW, SPI_SETDESKWALLPAPER,
+            WM_SETTINGCHANGE,
+        },
     },
     core::{PCWSTR, w},
 };
@@ -26,6 +29,22 @@ pub fn notify_config_changed() {
         if let Ok(dock) = FindWindowW(DOCK_WINDOW_CLASS, None) {
             let message = RegisterWindowMessageW(CONFIG_CHANGED);
             let _ = PostMessageW(Some(dock), message, WPARAM(0), LPARAM(0));
+        }
+    }
+}
+
+/// Refreshes Muelle's backdrop after a successful wallpaper change. Posting
+/// only to our window neither waits for nor wakes unrelated applications.
+pub fn notify_wallpaper_changed() {
+    // SAFETY: No pointers or borrowed data cross the process boundary.
+    unsafe {
+        if let Ok(dock) = FindWindowW(DOCK_WINDOW_CLASS, None) {
+            let _ = PostMessageW(
+                Some(dock),
+                WM_SETTINGCHANGE,
+                WPARAM(SPI_SETDESKWALLPAPER.0 as usize),
+                LPARAM(0),
+            );
         }
     }
 }

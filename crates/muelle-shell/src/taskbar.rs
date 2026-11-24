@@ -119,7 +119,13 @@ pub fn give_back() {
 /// "Show hidden icons", in a popup of its own over the desktop (issue #48).
 #[must_use]
 pub fn is_hidden(hwnd: HWND) -> bool {
-    taskbars().contains(&hwnd) && is_ghosted(hwnd)
+    is_taskbar(hwnd) && is_ghosted(hwnd)
+}
+
+/// Whether `hwnd` is the taskbar of one of the monitors, hidden or not.
+#[must_use]
+pub fn is_taskbar(hwnd: HWND) -> bool {
+    taskbars().contains(&hwnd)
 }
 
 fn taskbars() -> Vec<HWND> {

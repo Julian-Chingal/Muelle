@@ -365,6 +365,13 @@ pub struct GroupView {
 }
 
 impl GroupView {
+    pub fn refresh_backdrops(&self, gfx: &Gfx) -> Result<()> {
+        if let Some(target) = &self.target {
+            gfx.refresh_backdrops(&target.Root()?.cast()?)?;
+        }
+        Ok(())
+    }
+
     pub fn show(
         gfx: &Gfx,
         group_id: String,

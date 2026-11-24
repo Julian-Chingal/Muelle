@@ -302,6 +302,11 @@ impl App {
                 crate::recovery::graphics_error(&error);
                 muelle_shell::log::line(&format!("visibilidad de la barra superior: {error:#}"));
             }
+            // Runs when a window comes to the front and once it stops moving:
+            // its title bar must not open, or be dropped, under the bar.
+            if let Some(strip) = bar.reserved_strip() {
+                tracker::keep_below(front, strip);
+            }
         }
         // Windows sometimes omits the shell event when a full-screen app
         // closes or switches desktops. Poll only while our UI is hidden.

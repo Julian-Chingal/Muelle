@@ -1,6 +1,6 @@
 //! Win32 callbacks and popup/OLE entry points forwarding into the UI state.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
 use muelle_shell::{launcher, power, taskbar, tracker};
@@ -13,11 +13,12 @@ use windows::Win32::{
         WindowsAndMessaging::{
             DefWindowProcW, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_LOCATIONCHANGE,
             EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
-            EVENT_SYSTEM_MINIMIZESTART, HMENU, KillTimer, MA_ACTIVATE, MA_NOACTIVATE, OBJID_WINDOW,
-            PostMessageW, PostQuitMessage, SetTimer, WM_CAPTURECHANGED, WM_DESTROY,
-            WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_INITMENUPOPUP,
-            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
-            WM_MOUSEMOVE, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WM_TIMER,
+            EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, HMENU, KillTimer, MA_ACTIVATE, MA_NOACTIVATE, OBJID_WINDOW,
+            PostMessageW, PostQuitMessage, SPI_SETDESKWALLPAPER, SetTimer, WM_CAPTURECHANGED,
+            WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED,
+            WM_INITMENUPOPUP, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
+            WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED,
+            WM_TIMER,
         },
     },
 };
@@ -38,6 +39,20 @@ use super::{
     lifecycle::{is_tracked, main_window},
     with_app, with_app_then,
 };
+
+const BACKDROP_REFRESH: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 11;
+static BACKDROP_PENDING: AtomicBool = AtomicBool::new(false);
+
+fn queue_backdrop_refresh(hwnd: HWND) {
+    if hwnd.0.is_null() || BACKDROP_PENDING.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    // SAFETY: Only a payload-free notification is queued, never a synchronous
+    // call into another app. Both dock HWNDs coalesce onto the main UI window.
+    if unsafe { PostMessageW(Some(hwnd), BACKDROP_REFRESH, WPARAM(0), LPARAM(0)) }.is_err() {
+        BACKDROP_PENDING.store(false, Ordering::Relaxed);
+    }
+}
 
 pub(super) unsafe extern "system" fn on_win_event(
     _hook: HWINEVENTHOOK,
@@ -74,6 +89,12 @@ pub(super) unsafe extern "system" fn on_win_event(
         if child == 0 && hwnd.0 as isize == tracker::foreground_window() {
             unsafe { SetTimer(Some(main_window()), FULLSCREEN_TIMER, SYNC_DELAY_MS, None) };
         }
+    } else if event == EVENT_SYSTEM_MOVESIZEEND {
+        // A window let go of after a drag, even one that did not move at the
+        // end: the same re-check, which keeps its title bar out from under
+        // the menu bar (issue #53). One event per drag.
+        // SAFETY: A timer on our own window.
+        unsafe { SetTimer(Some(main_window()), FULLSCREEN_TIMER, SYNC_DELAY_MS, None) };
     } else if event == EVENT_OBJECT_CLOAKED || event == EVENT_OBJECT_UNCLOAKED {
         // Shows the windows of the virtual desktop in front, as the Windows
         // taskbar does. A desktop switch cloaks many windows at once; the
@@ -409,6 +430,10 @@ pub(super) unsafe extern "system" fn wndproc(
     l: LPARAM,
 ) -> LRESULT {
     match msg {
+        BACKDROP_REFRESH => {
+            BACKDROP_PENDING.store(false, Ordering::Relaxed);
+            with_app("cristal del fondo de pantalla", App::refresh_backdrops);
+        }
         HEALTH_CHECK => with_app("estado del dispositivo gráfico", |app| {
             app.gfx.check_device()
         }),
@@ -463,17 +488,21 @@ pub(super) unsafe extern "system" fn wndproc(
             unsafe { SetTimer(Some(hwnd), BIN_TIMER, BIN_DELAY_MS, None) };
         }
         WM_SETTINGCHANGE if w.0 == SPI_SETWORKAREA => {}
+        WM_SETTINGCHANGE if w.0 == SPI_SETDESKWALLPAPER.0 as usize => {
+            // FindWindow can return either dock HWND. Both must accept Settings'
+            // notification; broadcast duplicates share one queued brush update.
+            queue_backdrop_refresh(main_window());
+        }
         WM_DWMCOLORIZATIONCOLORCHANGED | WM_THEMECHANGED => {
-            with_app("material del sistema", |app| {
-                app.stage = None;
-                if let Some(bar) = &mut app.menubar {
-                    bar.invalidate_material();
+            queue_backdrop_refresh(main_window());
+            if hwnd == main_window() {
+                // Rebind the host sample now without discarding geometry or
+                // closing previews. A real light/glass change is still picked
+                // up by the normal scene keys when Windows finishes settling.
+                // SAFETY: This is our live main UI window.
+                unsafe {
+                    SetTimer(Some(hwnd), REFRESH_TIMER, REFRESH_DELAY_MS, None);
                 }
-                Ok(())
-            });
-            // Reuse the deferred refresh so DWM can finish changing its backdrop.
-            unsafe {
-                SetTimer(Some(hwnd), REFRESH_TIMER, REFRESH_DELAY_MS, None);
             }
         }
         WM_SETTINGCHANGE | WM_DISPLAYCHANGE | WM_DPICHANGED => {
@@ -641,4 +670,96 @@ pub(super) unsafe extern "system" fn wndproc(
         _ => return unsafe { DefWindowProcW(hwnd, msg, w, l) },
     }
     LRESULT(0)
+}
+
+#[cfg(test)]
+mod backdrop_tests {
+    use super::*;
+    use windows::{
+        Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, MSG, PM_REMOVE, PeekMessageW, WS_EX_TOOLWINDOW,
+            WS_POPUP,
+        },
+        core::w,
+    };
+
+    struct Window(HWND);
+    impl Drop for Window {
+        fn drop(&mut self) {
+            // SAFETY: Only this test's hidden window is destroyed.
+            unsafe {
+                let _ = DestroyWindow(self.0);
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "Native event queue regression; hidden test window, no desktop changes"]
+    fn wallpaper_notifications_coalesce_and_can_be_posted_again() -> Result<()> {
+        // SAFETY: A hidden STATIC window owned solely by this test thread.
+        let window = Window(unsafe {
+            CreateWindowExW(
+                WS_EX_TOOLWINDOW,
+                w!("STATIC"),
+                w!("Muelle backdrop regression"),
+                WS_POPUP,
+                0,
+                0,
+                1,
+                1,
+                None,
+                None,
+                None,
+                None,
+            )?
+        });
+        queue_backdrop_refresh(HWND::default());
+        assert!(!BACKDROP_PENDING.load(Ordering::Relaxed));
+        queue_backdrop_refresh(HWND(std::ptr::dangling_mut())); // Failed posts must not latch.
+        assert!(!BACKDROP_PENDING.load(Ordering::Relaxed));
+        for _ in 0..8 {
+            queue_backdrop_refresh(window.0);
+        }
+        let mut message = MSG::default();
+        // SAFETY: Only payload-free notifications on the test-owned window.
+        unsafe {
+            assert!(
+                PeekMessageW(
+                    &mut message,
+                    Some(window.0),
+                    BACKDROP_REFRESH,
+                    BACKDROP_REFRESH,
+                    PM_REMOVE
+                )
+                .as_bool()
+            );
+            assert!(
+                !PeekMessageW(
+                    &mut message,
+                    Some(window.0),
+                    BACKDROP_REFRESH,
+                    BACKDROP_REFRESH,
+                    PM_REMOVE
+                )
+                .as_bool()
+            );
+            // No App lives on this test thread; this acknowledges the event
+            // without touching the real desktop or constructing its UI.
+            wndproc(window.0, BACKDROP_REFRESH, WPARAM(0), LPARAM(0));
+            queue_backdrop_refresh(window.0);
+            assert!(
+                PeekMessageW(
+                    &mut message,
+                    Some(window.0),
+                    BACKDROP_REFRESH,
+                    BACKDROP_REFRESH,
+                    PM_REMOVE
+                )
+                .as_bool()
+            );
+            wndproc(window.0, BACKDROP_REFRESH, WPARAM(0), LPARAM(0));
+        }
+        assert!(!BACKDROP_PENDING.load(Ordering::Relaxed));
+        Ok(())
+    }
 }

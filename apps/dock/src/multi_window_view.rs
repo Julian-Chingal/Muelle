@@ -265,6 +265,13 @@ pub struct Anchor {
 }
 
 impl MultiWindowView {
+    pub fn refresh_backdrops(&self, gfx: &Gfx) -> Result<()> {
+        if let Some(target) = &self.target {
+            gfx.refresh_backdrops(&target.Root()?.cast()?)?;
+        }
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn show(
         gfx: &Gfx,

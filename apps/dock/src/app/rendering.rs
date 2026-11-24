@@ -106,6 +106,24 @@ impl App {
         entries
     }
 
+    /// A wallpaper change does not change scene keys. Refresh the host samples
+    /// in place, preserving magnification, drag state and open previews/panels.
+    pub(super) fn refresh_backdrops(&mut self) -> Result<()> {
+        if let Some(stage) = &self.stage {
+            self.gfx.refresh_backdrops(&stage.scene.root)?;
+        }
+        if let Some(bar) = &self.menubar {
+            bar.refresh_backdrops(&self.gfx)?;
+        }
+        if let Some(preview) = &self.preview {
+            preview.refresh_backdrops(&self.gfx)?;
+        }
+        if let Some(group) = &self.group_view {
+            group.refresh_backdrops(&self.gfx)?;
+        }
+        Ok(())
+    }
+
     /// Recalculates sizes, positions, and scene for the current state. Does
     /// nothing if the scene inputs are unchanged, since many Windows notifications
     /// do not affect the dock.

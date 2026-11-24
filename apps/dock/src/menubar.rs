@@ -240,7 +240,6 @@ struct Look {
     panel: Option<Island>,
     usage_refreshing: bool,
     track: Option<Track>,
-    volume_expanded: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -318,7 +317,6 @@ enum IslandAction {
     Toggle(Island),
     Media(MediaControl),
     Volume(VolumeTrack),
-    ToggleVolume,
     Mute,
     Refresh,
     ScrollUsage(i8),
@@ -513,7 +511,6 @@ pub struct MenuBar {
     pending_volume: Option<u8>,
     volume_target: Option<u8>,
     volume_controls: Option<VolumeControls>,
-    volume_expanded: bool,
     progress_controls: Option<ProgressControls>,
     progress_timer: bool,
     usage_scroll: f32,
@@ -1186,7 +1183,6 @@ impl MenuBar {
             pending_volume: None,
             volume_target: None,
             volume_controls: None,
-            volume_expanded: false,
             progress_controls: None,
             progress_timer: false,
             usage_scroll: 0.0,
@@ -1564,6 +1560,12 @@ impl MenuBar {
         Ok(())
     }
 
+    /// The strip of the screen the bar covers for good, if any: none while it
+    /// auto-hides or is hidden for a full-screen app.
+    pub fn reserved_strip(&self) -> Option<RECT> {
+        (self.visible && !self.auto_hide).then_some(self.bounds)
+    }
+
     /// Positions the window and reserves (or frees) its strip of the screen.
     fn place(&mut self) -> Result<()> {
         self.sync_progress_watch();
@@ -1830,14 +1832,6 @@ impl MenuBar {
                     return Ok(());
                 }
                 IslandAction::Volume(_) => return Ok(()), // Handled on press/drag.
-                IslandAction::ToggleVolume => {
-                    self.release_volume(None)?;
-                    self.volume_expanded = !self.volume_expanded;
-                    let Some(look) = self.look.clone() else {
-                        return self.refresh(gfx);
-                    };
-                    return self.apply_look(gfx, look);
-                }
                 IslandAction::Mute => {
                     if let Some(audio) = &mut self.audio {
                         audio.toggle_mute()?;
@@ -1912,10 +1906,10 @@ impl MenuBar {
             })
     }
 
-    /// Discards cached material after a Windows theme/compositor change.
-    pub fn invalidate_material(&mut self) {
-        // The host backdrop can change while light/glass booleans stay equal.
-        self.look = None;
+    /// Renew the host sample without rebuilding an open island or its controls.
+    pub fn refresh_backdrops(&self, gfx: &Gfx) -> Result<()> {
+        gfx.refresh_backdrops(&self.surface)?;
+        Ok(())
     }
 
     /// Redraws the bar if anything it shows has changed.
@@ -1966,7 +1960,6 @@ impl MenuBar {
             panel: self.panel,
             usage_refreshing: self.usage.as_ref().is_some_and(UsageMonitor::is_refreshing),
             track,
-            volume_expanded: self.volume_expanded,
         };
         self.apply_look(gfx, look)
     }
@@ -1999,10 +1992,6 @@ impl MenuBar {
         look.usage_enabled &= look.active_providers.any();
         self.panel = available_panel(look.panel, look.track.is_some(), look.usage_enabled);
         look.panel = self.panel;
-        if look.panel != Some(Island::Music) || look.status.volume.is_none() {
-            self.volume_expanded = false;
-        }
-        look.volume_expanded = self.volume_expanded;
         if look.panel != Some(Island::Usage) {
             self.usage_scroll = 0.0;
         }
@@ -2479,7 +2468,7 @@ impl MenuBar {
                 IslandStyle::Notch => panel_span(span, width, desired),
                 IslandStyle::Bubble => bubble_panel_span(self.triggers_span, width, desired),
             };
-            let volume_span = if kind == Island::Music && look.volume_expanded {
+            let volume_span = if kind == Island::Music && look.status.volume.is_some() {
                 let (music, volume) = volume_popover_layout(self.panel_span, width, look.scale);
                 self.panel_span = music;
                 Some(volume)
@@ -2493,14 +2482,7 @@ impl MenuBar {
             match kind {
                 Island::Music => {
                     if let Some(track) = &look.track {
-                        self.draw_player(
-                            gfx,
-                            &content,
-                            geometry,
-                            track,
-                            cover.as_ref(),
-                            look.volume_expanded,
-                        )?;
+                        self.draw_player(gfx, &content, geometry, track, cover.as_ref())?;
                     }
                     if let Some(span) = volume_span {
                         let volume_geometry = IslandGeometry::new(span, geometry.top, look);
@@ -2703,7 +2685,6 @@ impl MenuBar {
         geometry: IslandGeometry,
         track: &Track,
         cover: Option<&CompositionSurfaceBrush>,
-        volume_expanded: bool,
     ) -> Result<()> {
         let px = |v| geometry.px(v);
         let c = &gfx.compositor;
@@ -2828,44 +2809,6 @@ impl MenuBar {
             }
         }
         self.draw_progress(gfx, layers, geometry, track)?;
-        if let Some(volume) = self.status.volume {
-            let symbol = if volume.muted {
-                glyph::MUTE
-            } else {
-                glyph::VOLUME[volume.level.min(3) as usize]
-            };
-            let label = gfx.glyph_brush(&[(symbol, 1.0)], geometry.scale, ink)?;
-            let button_x = geometry.width - px(52.0);
-            if volume_expanded {
-                add_rounded_box(
-                    c,
-                    layers,
-                    button_x,
-                    px(127.0),
-                    px(28.0),
-                    px(28.0),
-                    px(9.0),
-                    geometry.control_fill(),
-                    None,
-                )?;
-            }
-            add_visual(
-                c,
-                layers,
-                &label.brush.cast()?,
-                button_x + (px(28.0) - label.width) / 2.0,
-                px(141.0) - label.height / 2.0,
-                label.width,
-                label.height,
-            )?;
-            self.island_hits.push(geometry.hit(
-                button_x,
-                px(127.0),
-                px(28.0),
-                px(28.0),
-                IslandAction::ToggleVolume,
-            ));
-        }
         Ok(())
     }
 
@@ -2977,13 +2920,7 @@ impl MenuBar {
     ) -> Result<()> {
         let px = |v| geometry.px(v);
         let c = &gfx.compositor;
-        let width = (geometry.width
-            - px(if self.status.volume.is_some() {
-                92.0
-            } else {
-                52.0
-            }))
-        .max(px(1.0));
+        let width = (geometry.width - px(52.0)).max(px(1.0));
         let Some(timeline) = track.timeline else {
             let text = if self.status.volume.is_some() {
                 strings::text().media_no_progress
@@ -4426,8 +4363,6 @@ mod island_tests {
             muted: false,
             percent: 50,
         });
-        bar.volume_expanded = true;
-        look.volume_expanded = true;
         look.status = bar.status;
         bar.apply_look(&gfx, look.clone())?;
         bar.apply_volume_reading(
@@ -4624,41 +4559,25 @@ mod island_tests {
                 for (light, glass) in [(true, true), (false, true), (true, false), (false, false)] {
                     look.light = light;
                     look.glass = glass;
-                    look.volume_expanded = false;
-                    bar.volume_expanded = false;
                     bar.build(&gfx, &look)?;
                     assert!(bar.cover.is_some());
                     assert!(bar.progress_controls.is_some());
-                    assert!(bar.volume_controls.is_none());
-                    assert!(!bar.island_hits.iter().any(|hit| matches!(
-                        hit.action,
-                        IslandAction::Volume(_) | IslandAction::Mute
-                    )));
-                    let audio = *bar
-                        .island_hits
-                        .iter()
-                        .find(|hit| matches!(hit.action, IslandAction::ToggleVolume))
-                        .context("volume expander")?;
-                    let (audio_left, audio_top, audio_right, audio_bottom) = audio.bounds;
+                    let capsule = bar
+                        .volume_controls
+                        .as_ref()
+                        .context("volume capsule should be visible with the player")?
+                        .geometry;
                     let progress = bar.progress_controls.as_ref().context("progress")?;
-                    assert!(
-                        progress.geometry.left + progress.geometry.px(26.0) + progress.width
-                            < audio_left
+                    assert_eq!(
+                        progress.width,
+                        progress.geometry.width - progress.geometry.px(52.0),
+                        "the progress track keeps only a balanced right inset"
                     );
                     assert!(
-                        audio_right <= bar.panel_span.right
-                            && audio_bottom
-                                <= (HEIGHT + PANEL_GAP + look.panel_height()) * scale + 1.0
+                        progress.geometry.left + progress.geometry.width <= capsule.left
+                            || progress.geometry.left >= capsule.left + capsule.width,
+                        "the volume capsule stays beside the player"
                     );
-                    bar.panel = look.panel;
-                    bar.look = Some(look.clone());
-                    bar.click(
-                        &gfx,
-                        (audio_left + audio_right) / 2.0,
-                        (audio_top + audio_bottom) / 2.0,
-                    )?;
-                    look = bar.look.clone().context("expanded look")?;
-                    assert!(bar.volume_expanded && look.volume_expanded);
                     let brush = bar.cover.as_ref().context("missing cover")?.1.clone();
                     bar.build(&gfx, &look)?;
                     assert_eq!(bar.cover.as_ref().context("cached cover")?.1, brush);
@@ -4700,18 +4619,9 @@ mod island_tests {
                 }
             }
         }
-        let audio = *bar
-            .island_hits
-            .iter()
-            .find(|hit| matches!(hit.action, IslandAction::ToggleVolume))
-            .context("collapse volume")?;
-        let (left, top, right, bottom) = audio.bounds;
-        bar.click(&gfx, (left + right) / 2.0, (top + bottom) / 2.0)?;
-        assert!(!bar.volume_expanded && bar.volume_controls.is_none());
-        assert!(bar.progress_controls.is_some());
-        bar.click(&gfx, (left + right) / 2.0, (top + bottom) / 2.0)?;
-        assert!(bar.volume_expanded && bar.volume_controls.is_some());
-        look = bar.look.clone().context("reopened volume")?;
+        // Commit the synthetic player to input/cache state after the layout
+        // matrix. build() alone does not update the open panel or cached Look.
+        bar.apply_look(&gfx, look.clone())?;
         let image = Arc::new(muelle_shell::icons::IconImage {
             width: 8,
             height: 8,
@@ -4792,6 +4702,10 @@ mod island_tests {
         bar.volume_drag = Some(span); // No SetCapture in a test.
         bar.queue_volume(span, 260.0);
         bar.pointer_moved(&gfx, 999.0, 140.0)?;
+        let player = bar.surface.Children()?.First()?.Current()?;
+        bar.refresh_backdrops(&gfx)?;
+        assert_eq!(bar.surface.Children()?.First()?.Current()?, player);
+        assert!(bar.volume_drag.is_some());
         assert_eq!(bar.pending_volume, Some(80));
         assert_eq!(
             bar.volume_controls
@@ -4843,14 +4757,14 @@ mod island_tests {
         assert!(!bar.release_volume(Some(200.0))?);
         bar.status.volume = None;
         look.status = bar.status;
-        // DWM/theme changes can require a new host backdrop while the visible
-        // theme flags remain identical. A cached Look must not suppress it.
+        // Wallpaper/DWM changes renew only the host sample. Cached content and
+        // the open music popup remain intact when the theme itself is unchanged.
         bar.look = Some(look.clone());
         let previous_material = bar.surface.Children()?.First()?.Current()?;
-        bar.invalidate_material();
-        assert!(bar.look.is_none());
+        bar.refresh_backdrops(&gfx)?;
+        assert!(bar.look.as_ref() == Some(&look));
         bar.apply_look(&gfx, look.clone())?;
-        assert_ne!(
+        assert_eq!(
             bar.surface.Children()?.First()?.Current()?,
             previous_material
         );

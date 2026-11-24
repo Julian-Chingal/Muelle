@@ -188,10 +188,16 @@ test("a rejected wallpaper change preserves the previous selection and can be re
   });
   const unmount = await view.mount();
   try {
-    await wallpaperButtons(view)[8].props.onClick();
+    const errors = [];
+    const originalConsoleError = console.error;
+    console.error = (...args) => errors.push(args);
+    try { await wallpaperButtons(view)[8].props.onClick(); }
+    finally { console.error = originalConsoleError; }
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0][0], "Failed to apply wallpaper:");
     assert.equal(wallpaperButtons(view).find((button) => button.props["aria-pressed"]).props["data-wallpaper-id"], 2);
     assert.equal(view.wallpaperPreviews.length, 0);
-    assert.ok(renderToStaticMarkup(view.body()).includes(texts.en.wallpaperApplyError));
+    assert.doesNotMatch(renderToStaticMarkup(view.body()), /wallpaper-status/);
     reject = false;
     await wallpaperButtons(view)[8].props.onClick();
     assert.equal(wallpaperButtons(view).find((button) => button.props["aria-pressed"]).props["data-wallpaper-id"], 9);

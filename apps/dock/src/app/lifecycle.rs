@@ -29,7 +29,8 @@ use windows::{
             WindowsAndMessaging::{
                 CreateWindowExW, DispatchMessageW, EVENT_OBJECT_CLOAKED,
                 EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_FOREGROUND,
-                EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, FindWindowW, GetMessageW,
+                EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND,
+                FindWindowW, GetMessageW,
                 IDC_ARROW, KillTimer, LoadCursorW, MSG, PM_REMOVE, PeekMessageW, PostMessageW,
                 RegisterClassW, RegisterShellHookWindow, RegisterWindowMessageW, SetTimer,
                 WINDOW_EX_STYLE, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_CLOSE, WM_QUIT,
@@ -46,7 +47,7 @@ use crate::{assets::Visuals, drop::DropTarget, gfx::Gfx, strings, thumbnails::Th
 use super::{
     APP, APPBAR_CALLBACK, ASSETS_READY, App, BIN_CHANGED, CLOAK_HOOK, CONFIG_CHANGED, DROP_WINDOW,
     FOREGROUND_HOOK, HOVER_OMEGA, LAST_FRONT, LAUNCH_BOUNCE_LIMIT, LOCATION_HOOK, MAIN_WINDOW,
-    MAX_SNAPSHOTS, MINIMIZE_HOOK, Outside, PINS_CHANGED, PreviewOrder, SHELL_HOOK, SYNC_DELAY_MS,
+    MAX_SNAPSHOTS, MINIMIZE_HOOK, MOVESIZE_HOOK, Outside, PINS_CHANGED, PreviewOrder, SHELL_HOOK, SYNC_DELAY_MS,
     SYNC_TIMER, TASKBAR_CREATED, TASKBAR_DELAY_MS, TASKBAR_MAX_ATTEMPTS, TASKBAR_PREFS_CHANGED,
     TASKBAR_TAKEN, TASKBAR_TIMER, UPDATE_AFTER_START, UPDATE_EVERY, UPDATE_RETRY, UPDATE_TIMER,
     WINDOW_CLASS,
@@ -360,6 +361,16 @@ pub fn run() -> Result<()> {
             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
         );
         LOCATION_HOOK.store(location_hook.0 as isize, Ordering::Relaxed);
+        let movesize_hook = SetWinEventHook(
+            EVENT_SYSTEM_MOVESIZEEND,
+            EVENT_SYSTEM_MOVESIZEEND,
+            None,
+            Some(on_win_event),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        );
+        MOVESIZE_HOOK.store(movesize_hook.0 as isize, Ordering::Relaxed);
         LAST_FRONT.store(tracker::foreground_window(), Ordering::Relaxed);
         let target: IDropTarget = DropTarget.into();
         RegisterDragDrop(input, &target)?;
@@ -389,6 +400,7 @@ pub fn run() -> Result<()> {
             &CLOAK_HOOK,
             &FOREGROUND_HOOK,
             &LOCATION_HOOK,
+            &MOVESIZE_HOOK,
         ] {
             let _ = UnhookWinEvent(HWINEVENTHOOK(hook.load(Ordering::Relaxed) as *mut _));
         }

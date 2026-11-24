@@ -286,6 +286,7 @@ static MINIMIZE_HOOK: AtomicIsize = AtomicIsize::new(0);
 static CLOAK_HOOK: AtomicIsize = AtomicIsize::new(0);
 static FOREGROUND_HOOK: AtomicIsize = AtomicIsize::new(0);
 static LOCATION_HOOK: AtomicIsize = AtomicIsize::new(0);
+static MOVESIZE_HOOK: AtomicIsize = AtomicIsize::new(0);
 /// The window in front before the Alt+Tab switcher opened.
 static LAST_FRONT: AtomicIsize = AtomicIsize::new(0);
 

@@ -10,6 +10,12 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### English
 
+- Changing a wallpaper from Settings now notifies the Dock directly and renews
+  existing glass surfaces without waiting for a theme change. Wallpaper and DWM
+  notifications preserve open previews and player controls when the theme is
+  unchanged; duplicate events are coalesced without polling.
+  The gallery uses Windows' persisted desktop setting and shell notification to
+  reduce the interval where acrylic still shows the previous image.
 - The menu bar can have a theme of its own (issue #54): turn off "Same theme
   for the menu bar" in Settings → Appearance and pick one for the menu bar and
   its panels, independently of the dock. By default it still shares the
@@ -17,6 +23,12 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### Español
 
+- Cambiar el fondo desde Ajustes ahora avisa directamente al Dock y renueva el
+  cristal existente sin esperar un cambio de tema. Las notificaciones del fondo
+  y de DWM conservan las previsualizaciones y controles abiertos si el tema no
+  cambia; los eventos repetidos se agrupan sin consultas periódicas.
+  La galería usa el ajuste persistente del escritorio y su notificación nativa
+  para reducir el intervalo en que el cristal muestra la imagen anterior.
 - La barra superior puede tener su propio tema (issue #54): desactiva "Mismo
   tema para la barra superior" en Ajustes → Apariencia y elige uno para la
   barra y sus paneles, independiente del dock. Por defecto sigue usando el
@@ -47,6 +59,20 @@ copia la sección de la versión que se publica a la release de GitHub.
   a full-screen app or the last window (issue #48). Windows gave the focus to
   the hidden taskbar; the dock now hands it to the window in front, or to the
   desktop. The menu bar's hidden-icons button keeps working.
+- Fixed the menu bar's "^" button starting the first hidden tray app right
+  after opening the panel (issue #52). It now opens it with Space instead of
+  Enter, whose key-up reached the panel's first icon, and sends no key unless
+  the taskbar actually took the focus.
+- Windows no longer open or stay with their title bar under the menu bar
+  (issue #53): one that comes to the front, or is let go of after a drag, with
+  its top edge under the visible bar moves just below it, as on macOS. Firefox
+  popups from `window.open()` opened at the very top and lost their close
+  button. Maximized, full-screen and borderless windows are left alone, as is
+  everything while the bar auto-hides. Event-driven, no polling.
+- Long folder lists in the Dock can be scrolled again (issue #56). Windows let
+  them grow to the whole screen, where the Dock and the menu bar covered their
+  scroll arrows; each list now fits between the two, so both arrows show and
+  scroll it on hover, as in any Windows menu.
 - Window previews always have their close button, and icons always bounce when
   an app asks for attention: both Settings switches were removed and their
   saved values are ignored.
@@ -106,6 +132,21 @@ copia la sección de la versión que se publica a la release de GitHub.
   daba el foco a la barra de tareas oculta; ahora el dock lo pasa a la ventana
   del frente o al escritorio. El botón de iconos ocultos de la barra superior
   sigue funcionando.
+- Corregido el botón «^» de la barra superior, que abría el primer icono oculto
+  de la bandeja justo después de mostrar el panel (issue #52). Ahora lo abre
+  con Espacio en vez de Enter, cuya tecla al soltarse llegaba al primer icono
+  del panel, y no envía ninguna tecla si la barra de tareas no recibió el foco.
+- Las ventanas ya no se abren ni se quedan con la barra de título bajo la barra
+  superior (issue #53): la que pasa al frente, o se suelta tras arrastrarla, con
+  su borde superior bajo la barra visible baja justo debajo, como en macOS. Los
+  popups de Firefox con `window.open()` se abrían arriba del todo y perdían el
+  botón de cerrar. No se tocan las ventanas maximizadas, a pantalla completa ni
+  sin bordes, ni nada mientras la barra se oculta sola. Por eventos, sin sondeos.
+- Las listas largas de las carpetas del Dock vuelven a poder desplazarse (issue
+  #56). Windows las dejaba crecer hasta ocupar toda la pantalla, donde el Dock y
+  la barra superior tapaban sus flechas de desplazamiento; ahora cada lista cabe
+  entre ambos, así que las dos flechas se ven y la desplazan al pasar el ratón,
+  como en cualquier menú de Windows.
 - Las previsualizaciones de ventanas siempre tienen su botón de cerrar y los
   iconos siempre rebotan cuando una app pide atención: se quitaron ambos
   interruptores de Ajustes y se ignoran sus valores guardados.
