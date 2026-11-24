@@ -106,7 +106,7 @@ pub fn menu_bar_clicked(x: f32, y: f32) {
                 return Ok(Some(Outside::InputMenu {
                     gfx: app.gfx.clone(),
                     anchor,
-                    dark: !crate::appearance::light(),
+                    dark: !crate::appearance::menu_bar_light(),
                 }));
             }
             bar.click(&app.gfx, x, y)?;

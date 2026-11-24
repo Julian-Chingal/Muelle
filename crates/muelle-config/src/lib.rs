@@ -118,6 +118,9 @@ pub struct Config {
     /// The look of the dock, the menu bar and their menus and panels.
     /// `Auto` (the default) follows Windows' light or dark mode.
     pub appearance: Appearance,
+    /// A theme of its own for the menu bar and its menus and panels (issue
+    /// #54). `None`, the default, gives it the dock's `appearance`.
+    pub menu_bar_appearance: Option<Appearance>,
     /// A folder shown at the right of the dock whose contents open as a
     /// menu, with a submenu for each folder inside, like a Windows 10 taskbar
     /// toolbar. Only one: the user arranges the folder as they like.
@@ -344,6 +347,7 @@ impl Default for Config {
             auto_update: true,
             language: Language::Auto,
             appearance: Appearance::Auto,
+            menu_bar_appearance: None,
             shortcuts_folder: None,
             notification_badges: true,
         }
@@ -945,6 +949,32 @@ mod tests {
         let frosted: Config =
             serde_json::from_str(r#"{"appearance":"frosted"}"#).unwrap_or_default();
         assert_eq!(frosted.appearance, Appearance::Frosted);
+    }
+
+    #[test]
+    fn the_menu_bar_shares_the_dock_theme_unless_given_its_own() -> Result<(), serde_json::Error> {
+        // Files from before the setting, and an explicit "same as the dock".
+        for json in [
+            r#"{"appearance":"aurora"}"#,
+            r#"{"menuBarAppearance":null}"#,
+        ] {
+            let config: Config = serde_json::from_str(json)?;
+            assert_eq!(config.menu_bar_appearance, None);
+        }
+        let own: Config =
+            serde_json::from_str(r#"{"appearance":"aurora","menuBarAppearance":"dark"}"#)?;
+        assert_eq!(
+            (own.appearance, own.menu_bar_appearance),
+            (Appearance::Aurora, Some(Appearance::Dark))
+        );
+        assert_eq!(
+            serde_json::from_str::<Config>(&serde_json::to_string(&own)?)?,
+            own
+        );
+        // A theme from a newer version reads as automatic, as for the dock.
+        let newer: Config = serde_json::from_str(r#"{"menuBarAppearance":"sepia"}"#)?;
+        assert_eq!(newer.menu_bar_appearance, Some(Appearance::Auto));
+        Ok(())
     }
 
     #[test]

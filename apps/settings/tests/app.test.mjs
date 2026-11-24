@@ -425,6 +425,45 @@ test("the theme picker offers every theme with a preview, saves only the choice 
   } finally { unmount(); }
 });
 
+test("the menu bar shares the dock theme until given its own, which saves on its own key", async () => {
+  for (const language of Object.keys(texts)) {
+    const view = fixture("appearance", { language, appearance: "aurora", menuBarAppearance: undefined });
+    const nodes = [...elements(view.body())];
+    const same = nodes.find((node) => node.props.label === texts[language].menuBarThemeSame && "checked" in node.props);
+    assert.equal(same.props.checked, true);
+    const second = nodes.find((node) => node.props.label === texts[language].menuBarTheme && node.props.options);
+    assert.equal(second.props.value, "aurora", "the closed picker shows the dock's theme");
+    const row = nodes.find((node) => node.props.label === texts[language].menuBarTheme && "open" in node.props);
+    assert.equal(row.props.open, false);
+  }
+
+  const view = fixture("appearance", { appearance: "aurora", menuBarAppearance: null });
+  const unmount = await view.mount();
+  try {
+    view.change(texts.en.menuBarThemeSame, false);
+    view.fire(60);
+    await settle();
+    // Starts from the dock's theme: nothing changes until another is picked.
+    assert.deepEqual(view.calls, [{ menuBarAppearance: "aurora" }]);
+    const nodes = [...elements(view.body())];
+    assert.ok(nodes.find((node) => node.props.label === texts.en.themeDock && node.props.options));
+    assert.equal(nodes.find((node) => node.props.label === texts.en.menuBarTheme && "open" in node.props).props.open, true);
+    view.change(texts.en.menuBarTheme, "dark");
+    view.fire(60);
+    await settle();
+    assert.deepEqual(view.calls.at(-1), { menuBarAppearance: "dark" });
+    // The dock's picker still saves only the dock's theme.
+    view.change(texts.en.themeDock, "light");
+    view.fire(60);
+    await settle();
+    assert.deepEqual(view.calls.at(-1), { appearance: "light" });
+    view.change(texts.en.menuBarThemeSame, true);
+    view.fire(60);
+    await settle();
+    assert.deepEqual(view.calls.at(-1), { menuBarAppearance: null });
+  } finally { unmount(); }
+});
+
 test("the alert bounce and the preview close button are always on, with no switch left", () => {
   for (const section of ["dock", "windows"]) for (const old of [false, true]) {
     const html = renderToStaticMarkup(fixture(section, { notificationBounce: old, showPreviewCloseButton: old }).body());

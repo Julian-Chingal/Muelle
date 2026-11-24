@@ -260,6 +260,13 @@ export function App() {
       .then((folder) => folder && update({ shortcutsFolder: folder }))
       .catch(() => setFailed(true));
   };
+  const ownMenuBarTheme = config.menuBarAppearance != null;
+  const themeChoices = THEMES.map((theme) => ({
+    value: theme,
+    label: themeName(t, theme),
+    detail: theme === "auto" ? t.themeAutoDetail : undefined,
+    preview: <ThemePreview appearance={theme} wallpaper={wallpaper} />,
+  }));
   const appWindow = getCurrentWindow();
   const waiting = pendingUpdate(updateState);
   // An update the user asked for keeps its banner even after "Later".
@@ -359,18 +366,32 @@ export function App() {
             <>
               <Card>
                 <VisualChoices<Appearance>
-                  label={t.theme}
+                  label={ownMenuBarTheme ? t.themeDock : t.theme}
                   columns={3}
                   value={config.appearance ?? "auto"}
-                  options={THEMES.map((theme) => ({
-                    value: theme,
-                    label: themeName(t, theme),
-                    detail: theme === "auto" ? t.themeAutoDetail : undefined,
-                    preview: <ThemePreview appearance={theme} wallpaper={wallpaper} />,
-                  }))}
+                  options={themeChoices}
                   onChange={(appearance) => update({ appearance })}
                 />
-                <p className="card-note row-hint">{t.themeHint}</p>
+                <p className="card-note row-hint">{ownMenuBarTheme ? t.themeDockHint : t.themeHint}</p>
+                <Row icon={<SettingIcon name="menu" />} label={t.menuBarThemeSame} hint={t.menuBarThemeSameHint}>
+                  <Toggle
+                    label={t.menuBarThemeSame}
+                    checked={!ownMenuBarTheme}
+                    // Turning it off starts from the dock's theme, so nothing
+                    // changes on screen until another theme is chosen.
+                    onChange={(same) => update({ menuBarAppearance: same ? null : config.appearance ?? "auto" })}
+                  />
+                </Row>
+                <SubRow label={t.menuBarTheme} stacked open={ownMenuBarTheme}>
+                  <VisualChoices<Appearance>
+                    label={t.menuBarTheme}
+                    hideLabel
+                    columns={3}
+                    value={config.menuBarAppearance ?? config.appearance ?? "auto"}
+                    options={themeChoices}
+                    onChange={(menuBarAppearance) => update({ menuBarAppearance })}
+                  />
+                </SubRow>
               </Card>
               <WallpaperGallery texts={t} onApplied={setWallpaper} />
             </>

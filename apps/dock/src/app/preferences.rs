@@ -182,6 +182,7 @@ impl App {
         }
         // The dock and the menu bar key their looks on it: `refresh` redraws both.
         crate::appearance::set(config.appearance);
+        crate::appearance::set_menu_bar(config.menu_bar_appearance);
         if !config.genie {
             self.restore_transitions();
             self.snapshots.clear();

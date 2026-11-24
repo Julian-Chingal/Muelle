@@ -8,6 +8,20 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ## [Unreleased]
 
+### English
+
+- The menu bar can have a theme of its own (issue #54): turn off "Same theme
+  for the menu bar" in Settings → Appearance and pick one for the menu bar and
+  its panels, independently of the dock. By default it still shares the
+  dock's theme, and existing settings are unchanged.
+
+### Español
+
+- La barra superior puede tener su propio tema (issue #54): desactiva "Mismo
+  tema para la barra superior" en Ajustes → Apariencia y elige uno para la
+  barra y sus paneles, independiente del dock. Por defecto sigue usando el
+  tema del dock, y los ajustes existentes no cambian.
+
 ## [0.1.22]
 
 ### English
