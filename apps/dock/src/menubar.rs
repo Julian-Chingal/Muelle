@@ -1940,7 +1940,7 @@ impl MenuBar {
         {
             usage.refresh(false);
         }
-        let appearance = appearance::current();
+        let appearance = appearance::menu_bar();
         let look = Look {
             accessories: self.accessories.as_ref().map_or([None, None], |monitor| {
                 accessory_readings(&monitor.snapshot())

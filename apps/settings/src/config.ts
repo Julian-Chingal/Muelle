@@ -52,6 +52,8 @@ export interface Config {
   autoUpdate: boolean;
   language: Language;
   appearance: Appearance;
+  /** The menu bar's own theme; null (or missing) gives it the dock's. */
+  menuBarAppearance: Appearance | null;
   /** The folder shown at the right of the dock, whose contents open as a menu. */
   shortcutsFolder: string | null;
 }

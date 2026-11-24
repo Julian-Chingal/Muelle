@@ -10,21 +10,17 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### English
 
-- Menu bar clicks (issue #55): the battery opens Power & battery settings and
-  the network icon opens the list of networks, instead of repeating the
-  control center. An optional notifications button, a bell at the right end,
-  opens the notification center, and the clock can open an app, shortcut or
-  URI chosen in Settings → Menu bar. By default it still opens notifications
-  and the calendar.
+- The menu bar can have a theme of its own (issue #54): turn off "Same theme
+  for the menu bar" in Settings → Appearance and pick one for the menu bar and
+  its panels, independently of the dock. By default it still shares the
+  dock's theme, and existing settings are unchanged.
 
 ### Español
 
-- Clics de la barra superior (issue #55): la batería abre Energía y batería y
-  el icono de red abre la lista de redes, en vez de repetir el centro de
-  control. Un botón de notificaciones opcional, una campana en el extremo
-  derecho, abre el centro de notificaciones, y el reloj puede abrir una app,
-  un acceso directo o un URI elegido en Ajustes → Barra superior. Por defecto
-  sigue abriendo las notificaciones y el calendario.
+- La barra superior puede tener su propio tema (issue #54): desactiva "Mismo
+  tema para la barra superior" en Ajustes → Apariencia y elige uno para la
+  barra y sus paneles, independiente del dock. Por defecto sigue usando el
+  tema del dock, y los ajustes existentes no cambian.
 
 ## [0.1.22]
 
