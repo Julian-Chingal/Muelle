@@ -26,6 +26,7 @@ import {
   loadWallpaperPreview,
   openReleaseNotes,
   openRepository,
+  pickClockTarget,
   pickFolder,
   saveConfig,
   setAutostart,
@@ -258,6 +259,11 @@ export function App() {
   const chooseFolder = () => {
     pickFolder(config.shortcutsFolder)
       .then((folder) => folder && update({ shortcutsFolder: folder }))
+      .catch(() => setFailed(true));
+  };
+  const chooseClockTarget = () => {
+    pickClockTarget(config.menuBarClockTarget ?? null, t.clockTargetApps, t.clockTargetAllFiles)
+      .then((target) => target && update({ menuBarClockTarget: target }))
       .catch(() => setFailed(true));
   };
   const appWindow = getCurrentWindow();
@@ -615,6 +621,25 @@ export function App() {
                     checked={config.accessoryBattery}
                     onChange={(accessoryBattery) => update({ accessoryBattery })}
                   />
+                </SubRow>
+                <SubRow label={t.menuBarNotifications} hint={t.menuBarNotificationsHint} open={config.menuBar}>
+                  <Toggle
+                    label={t.menuBarNotifications}
+                    checked={config.menuBarNotifications ?? false}
+                    onChange={(menuBarNotifications) => update({ menuBarNotifications })}
+                  />
+                </SubRow>
+                <SubRow label={t.clockTarget} hint={config.menuBarClockTarget ?? t.clockTargetDefault} open={config.menuBar}>
+                  <div className="push-group">
+                    {config.menuBarClockTarget ? (
+                      <button type="button" className="push" onClick={() => update({ menuBarClockTarget: null })}>
+                        {t.clockTargetReset}
+                      </button>
+                    ) : null}
+                    <button type="button" className="push" onClick={chooseClockTarget}>
+                      {t.clockTargetChoose}
+                    </button>
+                  </div>
                 </SubRow>
               </Card>
             </>
