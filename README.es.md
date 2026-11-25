@@ -34,7 +34,16 @@ en desarrollo activo.
 - Una carpeta de accesos directos a la derecha del dock: su contenido se abre
   como un menú, con un submenú para cada carpeta, como una barra de
   herramientas de la barra de tareas de Windows 10.
-- Ocultación automática opcional.
+- Visibilidad del dock y de la barra superior: siempre visibles, automática o
+  inteligente (se ocultan solo mientras la ventana activa llega debajo).
+- Apariencia: seguir a Windows o elegir Claro, Oscuro, Cristal esmerilado,
+  Transparente o Aurora; además, una galería de fondos sin conexión.
+- Monitor del sistema opcional en la barra superior: CPU, memoria y velocidad
+  de red.
+- Una mascota en pixel art para los momentos que importan: planes de IA,
+  batería, red, papelera y un saludo cada día. Elige el cangrejo de Claude, un
+  gato, un zorro, un capibara, un mochi o una chica; el recordatorio de
+  descanso es opcional y viene desactivado.
 - Porcentaje de batería de ratones y auriculares compatibles. Se activa en
   Ajustes → Barra superior → *Mostrar batería de accesorios*; viene desactivado.
 - Barra superior con la app en primer plano, hora, red, volumen y batería, el idioma

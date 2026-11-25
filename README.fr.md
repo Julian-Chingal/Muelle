@@ -50,7 +50,17 @@ Agrandissement fluide, aperçus des fenêtres en direct et effet génie facultat
 - Un dossier de raccourcis à droite du dock : son contenu s'ouvre en menu, avec
   un sous-menu pour chaque dossier qu'il contient, comme une barre d'outils de
   la barre des tâches de Windows 10.
-- Masquage automatique facultatif.
+- Visibilité du dock et de la barre de menus : toujours visibles,
+  automatique ou intelligente (masqués seulement quand la fenêtre active passe
+  dessous).
+- Apparence : suivre Windows, ou choisir Clair, Sombre, Verre dépoli,
+  Transparent ou Aurora ; plus une galerie de fonds d'écran hors ligne.
+- Un moniteur système facultatif dans la barre de menus : processeur, mémoire
+  et débit réseau.
+- Une mascotte en pixel art pour les moments qui comptent : forfaits IA,
+  batterie, réseau, corbeille et un bonjour chaque jour. Choisissez le crabe de
+  Claude, un chat, un renard, un capybara, un mochi ou une fille ; le rappel de
+  pause est facultatif et désactivé par défaut.
 - Niveau de batterie facultatif pour les souris et casques compatibles
   connectés. Activez Réglages → Barre de menus → *Afficher la batterie des
   accessoires* ; l'option est désactivée par défaut.

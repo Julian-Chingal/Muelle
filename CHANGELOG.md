@@ -81,7 +81,7 @@ copia la sección de la versión que se publica a la release de GitHub.
   five faces and acts as Claude's crab (happy, love, sad with a tear, asleep,
   walking along the Dock). Choose one under Settings > Dock, each previewed
   from the dock's own sprites over a backdrop of its world; Claude's crab stays
-  the default.
+  the default. The website shows all six.
 - The mascot comes out for more moments, each where it belongs: under the
   battery icon when it falls to 20 % or 10 % on battery or is full while
   charging; under the network icon when the connection has been lost for a few
@@ -155,7 +155,8 @@ copia la sección de la versión que se publica a la release de GitHub.
   las mismas cinco caras y actuaciones que el cangrejo de Claude (feliz, enamorado,
   triste con una lágrima, dormido, caminando por el Dock). Se eligen en Ajustes
   > Dock, cada una dibujada con los mismos sprites del dock sobre un fondo de su
-  mundo; el cangrejo de Claude sigue siendo la predeterminada.
+  mundo; el cangrejo de Claude sigue siendo la predeterminada. La web muestra
+  las seis.
 - La mascota aparece en más momentos, cada uno en su sitio: bajo el icono de
   la batería cuando baja al 20 % o al 10 % sin cargador o se llena cargando;
   bajo el icono de red cuando la conexión lleva unos segundos perdida (los

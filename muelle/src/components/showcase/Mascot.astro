@@ -5,7 +5,34 @@ import claude from "@/assets/usage/claude.svg";
 import Crab from "@/components/crab/Crab.astro";
 import Section from "@/components/layout/Section.astro";
 import SectionIntro from "@/components/showcase/SectionIntro.astro";
-import { crabFacts, crabIntro, crabMoments } from "@/data/crab";
+import { crabFacts, crabIntro, crabMoments, mascotChoices } from "@/data/crab";
+import { MASCOT_PALETTE, MASCOT_SPRITES } from "../../../../apps/settings/src/mascots";
+import settingsText from "../../../../apps/settings/src/i18n/en.json";
+
+// The same sprites Settings previews, drawn here at build time: one rect per
+// run of equal cells, no script.
+const mascotLabels = {
+  crab: settingsText.mascotCrab,
+  cat: settingsText.mascotCat,
+  fox: settingsText.mascotFox,
+  capybara: settingsText.mascotCapybara,
+  mochi: settingsText.mascotMochi,
+  girl: settingsText.mascotGirl,
+} as const;
+const mascots = mascotChoices.map((name) => {
+  const rows = MASCOT_SPRITES[name];
+  const runs: { x: number; y: number; length: number; fill: string }[] = [];
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; ) {
+      let end = x + 1;
+      while (end < row.length && row[end] === row[x]) end += 1;
+      const fill = MASCOT_PALETTE[row[x]];
+      if (fill) runs.push({ x, y, length: end - x, fill });
+      x = end;
+    }
+  });
+  return { name, label: mascotLabels[name], width: rows[0].length, height: rows.length, runs };
+});
 import { previewIcons } from "@/data/showcase";
 import "@/styles/showcase.css";
 ---
@@ -72,6 +99,25 @@ import "@/styles/showcase.css";
       </ol>
       <ul class="moments-facts">
         {crabFacts.map((fact) => <li>{fact}</li>)}
+      </ul>
+      <ul class="mascot-picks" role="list" aria-label="Mascots to pick from in Settings">
+        {
+          mascots.map((mascot) => (
+            <li title={mascot.label}>
+              <svg
+                viewBox={`0 0 ${mascot.width} ${mascot.height}`}
+                shape-rendering="crispEdges"
+                style={`height: ${mascot.height * 1.6}px`}
+                aria-hidden="true"
+              >
+                {mascot.runs.map((run) => (
+                  <rect x={run.x} y={run.y} width={run.length} height="1" fill={run.fill} />
+                ))}
+              </svg>
+              <span>{mascot.label}</span>
+            </li>
+          ))
+        }
       </ul>
     </div>
   </div>
@@ -311,5 +357,28 @@ import "@/styles/showcase.css";
     margin-right: 8px;
     color: var(--color-primary);
     font-weight: 800;
+  }
+
+  /* The six mascots, sitting on one line, as small as the dock shows them. */
+  .mascot-picks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 18px;
+    align-items: flex-end;
+    margin: 18px 0 0;
+    padding: 0 18px;
+    list-style: none;
+  }
+
+  .mascot-picks li {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    font-size: 0.75rem;
+    color: var(--color-mute);
+  }
+
+  .mascot-picks svg {
+    width: auto;
   }
 </style>

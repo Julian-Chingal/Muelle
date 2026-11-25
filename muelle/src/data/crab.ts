@@ -204,8 +204,11 @@ export const crabIntro = {
 } as const;
 
 export const crabFacts = [
-  "Never all the time: only on these moments.",
+  "Never all the time: only on moments like these, the battery and the network too.",
   "Hover over it and it reacts.",
   "Runs in the system compositor; zero cost while away.",
-  "Settings → Dock → Crab on special moments.",
+  "Settings → Dock → Mascot on special moments.",
 ] as const;
+
+/** The mascots to pick from, as Settings names them. */
+export const mascotChoices = ["crab", "cat", "fox", "capybara", "mochi", "girl"] as const;

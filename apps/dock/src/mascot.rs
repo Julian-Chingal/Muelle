@@ -264,7 +264,8 @@ const FOX: Pet = Pet {
         ".kccFFFFFFFc",
         "kccccFFFFccc",
         ".kcccccccccc",
-        "....kFcccccc",
+        // The jaw: the head stands out from the chest.
+        "...kkkkkkkkk",
         "....kFFccccc",
         "....kFFccccc",
         "....kFFFcccc",
@@ -422,11 +423,12 @@ const GIRL: Pet = Pet {
         "kHHHHkHHJKKKKKKKKKKKHk....",
         ".kHHHHkHHKKKKKKKKKKKk.....",
         "..kHHk.kHKKKKKKKKKKk......",
-        "...kk...kkHJJJJJJkk.......",
-        "......kkWWWPWWWWPWWkk.....",
-        ".....kWWWWPWWWWWWPWWWk....",
-        ".....kWWWWPWWWWWWPWWWk....",
-        ".....kWWWWPWWWWWWPWWWk....",
+        "...kk...kkHKKKKKKkk.......",
+        "........kkkkkJJJJkk.......",
+        "......kkWWWWkKKKKkWkk.....",
+        ".....kWWWWWPWkKKkWPWWk....",
+        ".....kWWWWPWWWkkWWPWWk....",
+        ".....kWWWWPWWWWWWWPWWk....",
         ".....kVVVVVVVVVVVVVVVk....",
         "......kkkkkkkkkkkkkkk.....",
     ],
@@ -445,14 +447,14 @@ const GIRL_PALM: &[&str] = &[".kk.", "kKKk", "kKJk", ".kk."];
 /// one a row higher.
 fn girl_pose(face: Face, step: bool) -> &'static [Patch] {
     match (face, step) {
-        (Face::Happy, false) => &[(18, 6, GIRL_FIST), (18, 17, GIRL_FIST)],
-        (Face::Happy, true) => &[(17, 6, GIRL_FIST), (18, 17, GIRL_FIST)],
+        (Face::Happy, false) => &[(19, 6, GIRL_FIST), (19, 17, GIRL_FIST)],
+        (Face::Happy, true) => &[(18, 6, GIRL_FIST), (19, 17, GIRL_FIST)],
         (Face::Love, false) => &[(16, 8, GIRL_PALM), (16, 18, GIRL_PALM)],
         (Face::Love, true) => &[(15, 8, GIRL_PALM), (16, 18, GIRL_PALM)],
         (Face::Sad, false) => &[(16, 16, GIRL_FIST)],
         (Face::Sad, true) => &[(15, 16, GIRL_FIST)],
-        (_, false) => &[(20, 8, GIRL_FIST), (20, 15, GIRL_FIST)],
-        (_, true) => &[(19, 8, GIRL_FIST), (20, 15, GIRL_FIST)],
+        (_, false) => &[(21, 8, GIRL_FIST), (21, 15, GIRL_FIST)],
+        (_, true) => &[(20, 8, GIRL_FIST), (21, 15, GIRL_FIST)],
     }
 }
 
@@ -686,8 +688,8 @@ const FOX_SMILE: [Mark; 6] = [
     (11, 12, b'e'),
     (10, 13, b'e'),
 ];
-/// Its nose and an open mouth.
-const FOX_OPEN: [Mark; 12] = [
+/// Its nose and an open mouth, closed below by the jaw line.
+const FOX_OPEN: [Mark; 10] = [
     (9, 11, b'e'),
     (9, 12, b'e'),
     (10, 10, b'e'),
@@ -698,8 +700,6 @@ const FOX_OPEN: [Mark; 12] = [
     (11, 11, b'm'),
     (11, 12, b'm'),
     (11, 13, b'e'),
-    (12, 11, b'e'),
-    (12, 12, b'e'),
 ];
 
 fn fox_face(face: Face) -> (&'static [Mark], &'static [Mark]) {
@@ -745,8 +745,6 @@ fn fox_face(face: Face) -> (&'static [Mark], &'static [Mark]) {
                 (11, 11, b'm'),
                 (11, 12, b'm'),
                 (11, 13, b'e'),
-                (12, 11, b'e'),
-                (12, 12, b'e'),
             ],
         ),
     }

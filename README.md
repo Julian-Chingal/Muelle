@@ -39,7 +39,14 @@
 - Drag and drop files onto apps, Downloads, or the Recycle Bin.
 - A shortcuts folder at the right of the dock: its contents open as a menu,
   with a submenu for each folder inside, like a Windows 10 taskbar toolbar.
-- Optional auto-hide.
+- Dock and menu bar visibility: always visible, automatic, or intelligent
+  (hidden only while the active window reaches under them).
+- Appearance: follow Windows, or pick Light, Dark, Frosted glass, Clear or
+  Aurora; plus an offline wallpaper gallery.
+- An optional system monitor in the menu bar: CPU, memory and network speed.
+- A pixel-art mascot for moments worth it: AI plans, the battery, the network,
+  the recycle bin and a daily hello. Pick Claude's crab, a cat, a fox, a
+  capybara, a mochi or a girl; an optional break reminder is off by default.
 - Optional battery levels for compatible connected mice and headsets. Enable
   Settings → Menu bar → *Show accessory battery*; it is off by default.
 - A top menu bar with the app in front, clock, network, volume and battery, the
