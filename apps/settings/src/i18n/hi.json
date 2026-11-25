@@ -140,8 +140,6 @@
   "shortcutsFolderHint": "डॉक से किसी फ़ोल्डर की सामग्री खोलें।",
   "shortcutsFolderChoose": "चुनें…",
   "shortcutsFolderRemove": "हटाएँ",
-  "notificationBadges": "ऐप ध्यान संकेतक",
-  "notificationBadgesHint": "टास्कबार की तरह हर ऐप का अपठित संकेतक (Slack, Zoom, Teams…) दिखाएँ, या किसी ऐप को ध्यान चाहिए तो एक बिंदु।",
   "groupAppearance": "दिखावट",
   "githubTitle": "GitHub पर Muelle",
   "githubStar": "स्टार देकर समर्थन करें",

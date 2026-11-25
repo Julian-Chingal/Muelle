@@ -140,8 +140,6 @@
   "shortcutsFolderHint": "فتح محتويات مجلد من Dock.",
   "shortcutsFolderChoose": "اختيار…",
   "shortcutsFolderRemove": "إزالة",
-  "notificationBadges": "مؤشر انتباه التطبيق",
-  "notificationBadgesHint": "يعرض مؤشر الرسائل غير المقروءة لكل تطبيق (Slack وZoom وTeams…) كما في شريط المهام، أو نقطة عندما يحتاج تطبيق إلى انتباهك.",
   "groupAppearance": "المظهر",
   "githubTitle": "Muelle على GitHub",
   "githubStar": "ادعمنا بنجمة",

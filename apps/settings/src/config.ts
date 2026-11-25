@@ -49,7 +49,6 @@ export interface Config {
   showIndicators: boolean;
   showRecents: boolean;
   bounceOnOpen: boolean;
-  notificationBadges: boolean;
   mascot: boolean;
   mascotCharacter?: MascotCharacter;
   mascotBreakReminder?: boolean;

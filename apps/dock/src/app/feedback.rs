@@ -428,11 +428,11 @@ impl App {
         Ok(())
     }
 
-    /// Takes the taskbar's overlay calls while badges are on, so each app's
-    /// unread count shows on its dock icon (see `overlays`); gives them back
-    /// to Explorer when they are turned off.
+    /// Takes the taskbar's overlay calls while Windows shows taskbar badges,
+    /// so each app's unread count shows on its dock icon (see `overlays`);
+    /// gives them back to Explorer when they are turned off.
     pub(super) fn sync_taskband(&mut self) {
-        if self.config.notification_badges {
+        if self.attention_enabled {
             crate::overlays::start(HWND(MAIN_WINDOW.load(Ordering::Relaxed) as *mut _));
         } else {
             crate::overlays::stop();
@@ -544,8 +544,9 @@ impl App {
     }
 
     pub(super) fn sync_badge_visuals(&mut self) -> Result<()> {
-        // Windows' own switch for taskbar badges, and Muelle's.
-        let shown = self.attention_enabled && self.config.notification_badges;
+        // Windows' own switch for taskbar badges ("Show badges on taskbar
+        // apps"), which Muelle follows as the taskbar does.
+        let shown = self.attention_enabled;
         crate::overlays::retain(|hwnd| self.windows.iter().any(|window| window.hwnd == hwnd));
         // An app's own overlay says more than the attention dot: it replaces it.
         let overlays: Vec<_> = self
@@ -568,9 +569,7 @@ impl App {
         }
         if let Some(view) = &mut self.group_view {
             view.set_attention(&self.gfx, |id| {
-                self.attention_enabled
-                    && self.config.notification_badges
-                    && app_has_attention(&self.attention, &self.windows, id)
+                self.attention_enabled && app_has_attention(&self.attention, &self.windows, id)
             })?;
         }
         Ok(())
@@ -584,6 +583,7 @@ impl App {
         if self.attention_enabled != enabled {
             self.attention_enabled = enabled;
             self.attention.clear();
+            self.sync_taskband();
             self.sync_badge_visuals()?;
             self.render()?;
         }

@@ -148,10 +148,10 @@ pub struct Config {
     /// menu, with a submenu for each folder inside, like a Windows 10 taskbar
     /// toolbar. Only one: the user arranges the folder as they like.
     pub shortcuts_folder: Option<String>,
-    /// Indicator on app icons when Windows requests attention. Their icon
-    /// always bounces too, and window previews always have a close button:
-    /// those two switches were retired, and their saved values are ignored.
-    pub notification_badges: bool,
+    // Retired switches, whose saved values are ignored: the attention
+    // indicator follows Windows' own "Show badges on taskbar apps"; icons
+    // always bounce for attention; window previews always have a close
+    // button.
 }
 
 /// Pinned apps the user gathered in one dock icon by dropping one on
@@ -399,7 +399,6 @@ impl Default for Config {
             appearance: Appearance::Auto,
             menu_bar_appearance: None,
             shortcuts_folder: None,
-            notification_badges: true,
         }
     }
 }
@@ -597,9 +596,9 @@ mod tests {
             "notificationBounce": false, "showPreviewCloseButton": false
         }))?;
         assert!(!old.smart_hide && !old.hides_automatically());
-        assert!(!old.notification_badges);
         let saved = serde_json::to_value(&old)?;
         assert!(saved.get("notifications").is_none());
+        assert!(saved.get("notificationBadges").is_none());
         assert!(saved.get("notificationBounce").is_none());
         assert!(saved.get("showPreviewCloseButton").is_none());
         assert_eq!(saved.get("smartHide"), Some(&serde_json::json!(false)));

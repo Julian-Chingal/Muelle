@@ -498,7 +498,7 @@ mod dock_preferences_tests {
         let initial = Config {
             pinned: vec!["editor".into()],
             shortcuts_folder: Some("C:\\Projects".into()),
-            notification_badges: false,
+            mascot: false,
             ..Config::default()
         };
         muelle_config::save(&file.0, &initial)?;
@@ -510,7 +510,7 @@ mod dock_preferences_tests {
         assert!(!saved.show_downloads && !saved.show_trash && !saved.show_start);
         assert_eq!(saved.pinned, initial.pinned);
         assert_eq!(saved.shortcuts_folder, initial.shortcuts_folder);
-        assert!(!saved.notification_badges);
+        assert!(!saved.mascot);
         let before = std::fs::read(&file.0)?;
         assert!(hide_fixed_item(&file.0, Role::App).is_err());
         assert_eq!(std::fs::read(&file.0)?, before);

@@ -26,7 +26,7 @@ const texts = Object.fromEntries(["en", "es", "fr", "zh", "hi", "ar", "bn", "pt"
   language, JSON.parse(readFileSync(path.join(source, "i18n", `${language}.json`), "utf8")),
 ]));
 const base = {
-  language: "en", menuBar: true, smartHide: false, notificationBadges: true,
+  language: "en", menuBar: true, smartHide: false,
   iconSize: 48, magnifiedSize: 77,
   magnification: true, dockPosition: "bottom", genie: true, genieSpeed: "normal",
   dockDensity: "normal", dockAutoHideSpeed: "normal", showStart: true,

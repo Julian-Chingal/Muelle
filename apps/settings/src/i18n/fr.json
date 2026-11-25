@@ -140,8 +140,6 @@
   "shortcutsFolderHint": "Ouvrez le contenu d'un dossier depuis le Dock.",
   "shortcutsFolderChoose": "Choisir…",
   "shortcutsFolderRemove": "Retirer",
-  "notificationBadges": "Indicateur d’attention",
-  "notificationBadgesHint": "Affiche l’indicateur de messages non lus de chaque app (Slack, Zoom, Teams…) comme dans la barre des tâches, ou un point quand une app demande votre attention.",
   "groupAppearance": "Apparence",
   "githubTitle": "Muelle sur GitHub",
   "githubStar": "Soutenir avec une étoile",

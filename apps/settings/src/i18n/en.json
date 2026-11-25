@@ -140,8 +140,6 @@
   "shortcutsFolderHint": "Open a folder's contents from the Dock.",
   "shortcutsFolderChoose": "Choose…",
   "shortcutsFolderRemove": "Remove",
-  "notificationBadges": "App attention indicator",
-  "notificationBadgesHint": "Shows each app's unread indicator (Slack, Zoom, Teams…) as on the taskbar, or a dot when an app needs attention.",
   "groupAppearance": "Appearance",
   "githubTitle": "Muelle on GitHub",
   "githubStar": "Support with a star",

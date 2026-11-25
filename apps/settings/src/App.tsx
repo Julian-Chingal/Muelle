@@ -476,9 +476,6 @@ export function App() {
                     onChange={(dockAutoHideSpeed) => update({ dockAutoHideSpeed })}
                   />
                 </SubRow>
-                <Row label={t.notificationBadges} hint={t.notificationBadgesHint}>
-                  <Toggle label={t.notificationBadges} checked={config.notificationBadges} onChange={(notificationBadges) => update({ notificationBadges })} />
-                </Row>
                 <Row icon={<SettingIcon name="bounce" />} label={t.bounceOnOpen}>
                   <Toggle
                     label={t.bounceOnOpen}
