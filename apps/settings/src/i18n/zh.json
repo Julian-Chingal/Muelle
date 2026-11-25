@@ -141,7 +141,7 @@
   "shortcutsFolderChoose": "选择…",
   "shortcutsFolderRemove": "移除",
   "notificationBadges": "应用提醒指示器",
-  "notificationBadgesHint": "当 Windows 报告应用需要关注时显示指示器。",
+  "notificationBadgesHint": "像任务栏一样显示各应用的未读指示（Slack、Zoom、Teams…），或在应用需要关注时显示圆点。",
   "groupAppearance": "外观",
   "githubTitle": "GitHub 上的 Muelle",
   "githubStar": "点亮星标支持我们",

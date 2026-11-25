@@ -384,6 +384,7 @@ pub fn run() -> Result<()> {
 
         app.schedule_update();
         app.sync_break_timer();
+        app.sync_taskband();
         // The day's greeting, or a new version's celebration; and again
         // after an unlock (see `on_session_change`).
         app.arm_welcome();
@@ -403,6 +404,8 @@ pub fn run() -> Result<()> {
         startup.elapsed().as_millis()
     ));
     message_loop();
+    // The taskbar's overlay calls go back to Explorer.
+    crate::overlays::stop();
     // SAFETY: The drop target was registered on this window in this thread.
     unsafe {
         let _ = RevokeDragDrop(HWND(DROP_WINDOW.load(Ordering::Relaxed) as *mut _));

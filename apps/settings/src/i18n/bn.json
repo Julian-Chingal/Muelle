@@ -141,7 +141,7 @@
   "shortcutsFolderChoose": "বেছে নিন…",
   "shortcutsFolderRemove": "সরান",
   "notificationBadges": "অ্যাপের মনোযোগ সূচক",
-  "notificationBadgesHint": "কোনো অ্যাপের মনোযোগ প্রয়োজন বলে Windows জানালে সূচক দেখান।",
+  "notificationBadgesHint": "টাস্কবারের মতো প্রতিটি অ্যাপের না-পড়া সূচক (Slack, Zoom, Teams…) দেখায়, অথবা কোনো অ্যাপের মনোযোগ দরকার হলে একটি বিন্দু।",
   "groupAppearance": "চেহারা",
   "githubTitle": "GitHub-এ Muelle",
   "githubStar": "স্টার দিয়ে সমর্থন করুন",

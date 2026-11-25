@@ -233,6 +233,8 @@ fn watch(pid: u32, process: HANDLE, recovery: HANDLE) -> Result<bool> {
             // Keep monitoring this process. An unrelated hung app must not
             // hold the guard in window enumeration while it repairs the shell.
             taskbar::give_back_on_exit();
+            // Apps must not wait on a hung window for their overlay calls.
+            muelle_shell::taskband::restore_after_exit();
         }
     }
 }
@@ -294,6 +296,8 @@ fn ui_responds(pid: u32) -> bool {
 fn restore_desktop() {
     // If the dock exited cleanly, repeating its restoration is harmless.
     taskbar::give_back_on_exit();
+    // And the taskbar's overlay calls, if the dock still held them.
+    muelle_shell::taskband::restore_after_exit();
     // The dock turns off window transitions while it runs (genie effect); if
     // it died without restoring them, do it here.
     // The opt-in workspace mode can also have calmed windows on other desktops.

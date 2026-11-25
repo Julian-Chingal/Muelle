@@ -141,7 +141,7 @@
   "shortcutsFolderChoose": "Escolher…",
   "shortcutsFolderRemove": "Remover",
   "notificationBadges": "Indicador de atenção do aplicativo",
-  "notificationBadgesHint": "Mostra um indicador quando o Windows informa que um aplicativo precisa de atenção.",
+  "notificationBadgesHint": "Mostra o indicador de mensagens não lidas de cada aplicativo (Slack, Zoom, Teams…) como na barra de tarefas, ou um ponto quando um aplicativo precisa de atenção.",
   "groupAppearance": "Aparência",
   "githubTitle": "Muelle no GitHub",
   "githubStar": "Apoie com uma estrela",

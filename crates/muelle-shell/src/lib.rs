@@ -20,6 +20,7 @@ pub mod recycle_bin;
 pub mod screen;
 pub mod status;
 pub mod system;
+pub mod taskband;
 pub mod taskbar;
 pub mod tracker;
 pub mod updates;

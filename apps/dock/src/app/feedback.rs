@@ -34,6 +34,32 @@ pub(super) fn app_has_attention(
         .any(|window| window.app_id == id && attention.contains(window.hwnd))
 }
 
+/// The overlay icon an entry's app put on its taskbar button, if any (see
+/// `overlays`): for a group, its first app that has one.
+pub(super) fn entry_overlay(
+    windows: &[TrackedWindow],
+    entry: &Entry,
+) -> Option<std::rc::Rc<muelle_shell::icons::IconImage>> {
+    let of_app = |id: &str| {
+        windows
+            .iter()
+            .filter(|window| window.app_id == id)
+            .map(|window| window.hwnd)
+            .collect::<Vec<_>>()
+    };
+    match entry.role {
+        Role::App => crate::overlays::image_for(of_app(entry.id.as_deref()?).into_iter()),
+        Role::Group => entry
+            .members
+            .iter()
+            .find_map(|id| crate::overlays::image_for(of_app(id).into_iter())),
+        Role::Window => {
+            crate::overlays::image_for(entry.id.as_deref().and_then(window_of).into_iter())
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn entry_has_attention(
     attention: &Attention,
     windows: &[TrackedWindow],
@@ -402,6 +428,17 @@ impl App {
         Ok(())
     }
 
+    /// Takes the taskbar's overlay calls while badges are on, so each app's
+    /// unread count shows on its dock icon (see `overlays`); gives them back
+    /// to Explorer when they are turned off.
+    pub(super) fn sync_taskband(&mut self) {
+        if self.config.notification_badges {
+            crate::overlays::start(HWND(MAIN_WINDOW.load(Ordering::Relaxed) as *mut _));
+        } else {
+            crate::overlays::stop();
+        }
+    }
+
     /// Starts or stops the break reminder's minute (see `break_tick`).
     pub(super) fn sync_break_timer(&mut self) {
         // SAFETY: A timer on our own window.
@@ -507,12 +544,24 @@ impl App {
     }
 
     pub(super) fn sync_badge_visuals(&mut self) -> Result<()> {
+        // Windows' own switch for taskbar badges, and Muelle's.
+        let shown = self.attention_enabled && self.config.notification_badges;
+        crate::overlays::retain(|hwnd| self.windows.iter().any(|window| window.hwnd == hwnd));
+        // An app's own overlay says more than the attention dot: it replaces it.
+        let overlays: Vec<_> = self
+            .entries
+            .iter()
+            .map(|entry| shown.then(|| entry_overlay(&self.windows, entry)).flatten())
+            .collect();
         if let Some(stage) = &mut self.stage {
+            stage
+                .scene
+                .set_overlays(&self.gfx, overlays.iter().cloned())?;
             stage.scene.set_attention(
                 &self.gfx,
-                self.entries.iter().map(|entry| {
-                    self.attention_enabled
-                        && self.config.notification_badges
+                self.entries.iter().zip(&overlays).map(|(entry, overlay)| {
+                    shown
+                        && overlay.is_none()
                         && entry_has_attention(&self.attention, &self.windows, entry)
                 }),
             )?;

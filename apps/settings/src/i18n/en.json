@@ -141,7 +141,7 @@
   "shortcutsFolderChoose": "Choose…",
   "shortcutsFolderRemove": "Remove",
   "notificationBadges": "App attention indicator",
-  "notificationBadgesHint": "Show an indicator when Windows reports that an app needs attention.",
+  "notificationBadgesHint": "Shows each app's unread indicator (Slack, Zoom, Teams…) as on the taskbar, or a dot when an app needs attention.",
   "groupAppearance": "Appearance",
   "githubTitle": "Muelle on GitHub",
   "githubStar": "Support with a star",

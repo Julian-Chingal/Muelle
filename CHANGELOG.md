@@ -24,6 +24,13 @@ copia la sección de la versión que se publica a la release de GitHub.
   walking across the Dock. Choose one under Settings > Dock; each preview uses
   its own dock sprites over a backdrop of its world. Claude's crab remains the
   default, and the website showcases all six.
+- Apps' unread indicators show on their Dock icons, as on the taskbar (issue
+  #65): the red dot or count Slack, Zoom or Teams put on their taskbar button
+  appears at the top right of their icon, in place of the attention dot. Muelle
+  receives what apps send to the hidden taskbar, as ManagedShell-based
+  taskbars do, and gives it back to Explorer when it quits, when App attention
+  indicator is turned off, or (through the watchdog) if it stops unexpectedly.
+  An app already open when Muelle starts may need a restart to show it.
 - The mascot comes out for more moments, each where it belongs: under the
   battery icon when it falls to 20 % or 10 % on battery or is full while
   charging; under the network icon when the connection has been lost for a few
@@ -49,6 +56,14 @@ copia la sección de la versión que se publica a la release de GitHub.
   una lágrima, sueño y paseo por el Dock. Se eligen en Ajustes > Dock y tienen
   una vista previa con sus sprites sobre el fondo de su mundo. El cangrejo de
   Claude sigue siendo la opción predeterminada; la web muestra las seis.
+- Los indicadores de mensajes sin leer de las apps se ven en sus iconos del
+  Dock, como en la barra de tareas (issue #65): el punto rojo o el número que
+  Slack, Zoom o Teams ponen en su botón aparece arriba a la derecha de su
+  icono, en lugar del punto de atención. Muelle recibe lo que las apps envían a
+  la barra oculta, como las barras basadas en ManagedShell, y se lo devuelve a
+  Explorer al salir, al desactivar el Indicador de atención o (con el proceso
+  guardián) si se cierra de forma inesperada. Una app ya abierta al iniciar
+  Muelle puede necesitar reiniciarse para mostrarlo.
 - La mascota aparece en más momentos, cada uno en su sitio: bajo el icono de
   la batería cuando baja al 20 % o al 10 % sin cargador o se llena cargando;
   bajo el icono de red cuando la conexión lleva unos segundos perdida (los

@@ -201,6 +201,7 @@ impl App {
         // Updates may have been turned on or off, and the break reminder.
         self.schedule_update();
         self.sync_break_timer();
+        self.sync_taskband();
         if workspaces_changed {
             self.sync()?;
         }

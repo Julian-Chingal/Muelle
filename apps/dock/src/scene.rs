@@ -5,7 +5,7 @@
 #[path = "scene/material_tests.rs"]
 mod material_tests;
 
-use std::cell::Cell;
+use std::{cell::Cell, rc::Rc};
 
 use anyhow::Result;
 use muelle_core::{
@@ -18,7 +18,8 @@ use windows::{
         Color,
         Composition::{
             CompositionBrush, CompositionColorSpace, CompositionRoundedRectangleGeometry,
-            CompositionSurfaceBrush, ContainerVisual, ShapeVisual, SpriteVisual, Visual,
+            CompositionStretch, CompositionSurfaceBrush, ContainerVisual, ShapeVisual,
+            SpriteVisual, Visual,
         },
     },
     core::Interface,
@@ -29,6 +30,7 @@ use crate::{
     appearance::{Look, Material},
     gfx::{Gfx, LabelBrush},
 };
+use muelle_shell::icons::IconImage;
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -406,6 +408,19 @@ impl AttentionBadge {
     }
 }
 
+/// Where an app's own overlay icon goes (issue #65): its unread count or
+/// status, at the top right of the dock icon as a macOS badge, a little
+/// past its corner so it reads as on top of the icon.
+fn overlay_rect(icon: Rect) -> Rect {
+    let side = icon.width.min(icon.height) * 0.42;
+    Rect {
+        x: icon.x + icon.width - side * 0.85,
+        y: icon.y - side * 0.15,
+        width: side,
+        height: side,
+    }
+}
+
 fn attention_rect(icon: Rect, scale: f32) -> Rect {
     let side = (icon.width * 0.25)
         .clamp(8.0 * scale, 14.0 * scale)
@@ -437,6 +452,11 @@ mod attention_tests {
                     width: width * scale,
                     height: width * scale,
                 };
+                let overlay = overlay_rect(icon);
+                assert!(
+                    overlay.width > 0.0 && overlay.x + overlay.width > icon.x + icon.width * 0.8
+                );
+                assert!(overlay.y <= icon.y && overlay.y + overlay.height > icon.y);
                 let badge = attention_rect(icon, scale);
                 assert!(badge.x >= icon.x && badge.y >= icon.y);
                 assert!(badge.x + badge.width <= icon.x + icon.width);
@@ -444,6 +464,89 @@ mod attention_tests {
                 assert!(badge.width > 0.0);
             }
         }
+    }
+
+    #[test]
+    #[ignore = "Requires Windows desktop composition"]
+    fn native_app_overlays_keep_their_visual_follow_the_icon_and_go() -> Result<()> {
+        use windows::Win32::System::WinRT::{
+            CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT,
+            DispatcherQueueOptions,
+        };
+        let _queue = unsafe {
+            CreateDispatcherQueueController(DispatcherQueueOptions {
+                dwSize: size_of::<DispatcherQueueOptions>() as u32,
+                threadType: DQTYPE_THREAD_CURRENT,
+                apartmentType: DQTAT_COM_STA,
+            })?
+        };
+        let gfx = Gfx::new()?;
+        let scale = 1.25;
+        let layout = layout(
+            &[ItemKind::Icon, ItemKind::Icon],
+            &Metrics::DEFAULT.scaled(scale),
+        );
+        let contents = [SlotContent::default(); 2];
+        let mut scene = Scene::build(
+            &gfx,
+            &SceneInput {
+                layout: &layout,
+                contents: &contents,
+                theme: Theme::new(Look {
+                    material: crate::appearance::Material::Standard,
+                    light: true,
+                    glass: true,
+                }),
+                scale,
+                frame: DockFrame::new(DockEdge::Bottom, (0.0, 0.0), layout.height),
+                remove_label: None,
+            },
+        )?;
+        let root = scene.root.clone();
+        // A red dot with an unread count, as Slack sends it.
+        let image = Rc::new(IconImage {
+            width: 16,
+            height: 16,
+            bgra: [60u8, 59, 255, 255].repeat(256),
+        });
+        scene.set_overlays(&gfx, [Some(image.clone()), None].into_iter())?;
+        let visual = scene.overlays[0]
+            .as_ref()
+            .map(|(_, visual)| visual.clone())
+            .ok_or_else(|| anyhow::anyhow!("missing overlay"))?;
+        assert!(scene.overlays[1].is_none());
+        // The same image again keeps its visual.
+        scene.set_overlays(&gfx, [Some(image), None].into_iter())?;
+        assert!(
+            scene.overlays[0]
+                .as_ref()
+                .is_some_and(|(_, kept)| *kept == visual)
+        );
+        let state = magnify(
+            &layout,
+            24.0 * scale,
+            1.0,
+            &Magnifier {
+                range: 144.0 * scale,
+                max_scale: 1.6,
+            },
+        );
+        scene.apply(&Frame {
+            state: &state,
+            hovered: None,
+            lifts: &[0.0, 0.0],
+            drag: None,
+            target: None,
+            slide: 0.0,
+            snap: true,
+        })?;
+        let icon = state.rects[0];
+        assert!(visual.Size()?.X > 0.0);
+        assert!(visual.Offset()?.X > icon.x);
+        scene.set_overlays(&gfx, [None, None].into_iter())?;
+        assert!(scene.overlays.iter().all(Option::is_none));
+        assert!(scene.root == root);
+        Ok(())
     }
 
     #[test]
@@ -606,6 +709,9 @@ pub struct Scene {
     slots: Vec<SpriteVisual>,
     badges: Vec<Option<SpriteVisual>>,
     attention: Vec<Option<AttentionBadge>>,
+    /// Each app's own overlay icon, from its taskbar button, and the image
+    /// it shows (see `overlays`).
+    overlays: Vec<Option<(Rc<IconImage>, SpriteVisual)>>,
     attention_theme: Theme,
     scale: f32,
     indicators: Vec<Option<ShapeVisual>>,
@@ -758,6 +864,7 @@ impl Scene {
             slots,
             badges,
             attention: (0..layout.slots.len()).map(|_| None).collect(),
+            overlays: (0..layout.slots.len()).map(|_| None).collect(),
             attention_theme: theme,
             scale,
             indicators,
@@ -768,6 +875,38 @@ impl Scene {
 
     /// Changes only badge visuals: notifications never rebuild the layout or
     /// close an open window picker. Repeated events reuse the same visual.
+    /// Shows each app's own overlay icon, as its taskbar button would. Only
+    /// these visuals change; an unchanged image keeps its visual.
+    pub fn set_overlays(
+        &mut self,
+        gfx: &Gfx,
+        images: impl Iterator<Item = Option<Rc<IconImage>>>,
+    ) -> Result<()> {
+        for (slot, image) in self.overlays.iter_mut().zip(images) {
+            let same = match (slot.as_ref(), image.as_ref()) {
+                (Some((old, _)), Some(new)) => Rc::ptr_eq(old, new),
+                (None, None) => true,
+                _ => false,
+            };
+            if same {
+                continue;
+            }
+            if let Some((_, visual)) = slot.take() {
+                self.content.Children()?.Remove(&visual)?;
+            }
+            if let Some(image) = image {
+                let c = &gfx.compositor;
+                let brush = c.CreateSurfaceBrushWithSurface(&gfx.image_surface(&image)?)?;
+                brush.SetStretch(CompositionStretch::Uniform)?;
+                let visual = c.CreateSpriteVisual()?;
+                visual.SetBrush(&brush)?;
+                self.content.Children()?.InsertAtTop(&visual)?;
+                *slot = Some((image, visual));
+            }
+        }
+        Ok(())
+    }
+
     pub fn set_attention(&mut self, gfx: &Gfx, pending: impl Iterator<Item = bool>) -> Result<()> {
         for (notice, on) in self.attention.iter_mut().zip(pending) {
             if on && notice.is_none() {
@@ -872,6 +1011,23 @@ impl Scene {
                     fit(y + height - side * BADGE_INSIDE),
                 ))?;
             }
+            if let Some(Some((_, overlay))) = self.overlays.get(index) {
+                let badge = overlay_rect(Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                });
+                overlay.SetSize(v2(fit(badge.width), fit(badge.height)))?;
+                overlay.SetOffset(v3(fit(badge.x), fit(badge.y)))?;
+                overlay.SetOpacity(if dragged.is_some_and(|drag| drag.ghost) {
+                    0.35
+                } else if dragged.is_some_and(|drag| drag.removing) {
+                    0.55
+                } else {
+                    1.0
+                })?;
+            }
             if let Some(Some(notice)) = self.attention.get(index) {
                 notice.place(
                     Rect {
@@ -950,6 +1106,10 @@ impl Scene {
             if let Some(Some(badge)) = index.and_then(|index| self.attention.get(index)) {
                 children.Remove(&badge.visual)?;
                 children.InsertAtTop(&badge.visual)?;
+            }
+            if let Some(Some((_, overlay))) = index.and_then(|index| self.overlays.get(index)) {
+                children.Remove(overlay)?;
+                children.InsertAtTop(overlay)?;
             }
         }
         self.raised.set(index);

@@ -652,7 +652,15 @@ pub(super) unsafe extern "system" fn wndproc(
             });
         }
         _ if CONFIG_CHANGED.get() == Some(&msg) => with_app("ajustes", App::reload_config),
+        crate::overlays::OVERLAYS_CHANGED => {
+            with_app("insignias de apps", |app| {
+                app.sync_badge_visuals()?;
+                app.render()
+            });
+        }
         _ if TASKBAR_CREATED.get() == Some(&msg) => {
+            // The new taskbar points its overlay calls at itself again.
+            crate::overlays::reclaim();
             with_app("Explorer reiniciado", |app| {
                 app.taskbar_attempts = 0;
                 Ok(())

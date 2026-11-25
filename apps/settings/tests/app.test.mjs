@@ -72,7 +72,7 @@ function fixture(section = "menubar", config = {}, save = async () => {}, galler
     setTheme(theme) { this.themes.push(theme); return Promise.resolve(); },
   };
   const mocks = {
-    "@tauri-apps/api/app": { getVersion: async () => "0.1.23" },
+    "@tauri-apps/api/app": { getVersion: async () => "0.1.24" },
     "@tauri-apps/api/event": { listen: async () => () => {} },
     "@tauri-apps/api/window": { getCurrentWindow: () => nativeWindow },
     "@tauri-apps/api/core": { invoke: async (command, args) => {
