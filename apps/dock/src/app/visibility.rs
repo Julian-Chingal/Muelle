@@ -307,6 +307,15 @@ impl App {
             if let Some(strip) = bar.reserved_strip() {
                 tracker::keep_below(front, strip);
             }
+            // Intelligent hiding (issue #61): the same test as the dock's,
+            // against the bar's strip.
+            let covered = self.config.menu_bar_smart_hide
+                && self.windows.iter().any(|window| window.hwnd == front)
+                && tracker::visible_rect(front)
+                    .is_some_and(|rect| rects_overlap(bar.bounds(), rect));
+            if let Err(error) = bar.set_covered(&self.gfx, covered) {
+                muelle_shell::log::line(&format!("ocultación inteligente de la barra: {error:#}"));
+            }
         }
         // Windows sometimes omits the shell event when a full-screen app
         // closes or switches desktops. Poll only while our UI is hidden.

@@ -1,6 +1,10 @@
 //! Dock visual tree: shadow, glass, specular border, dividers, icons, indicators,
 //! and labels. It is built once per configuration; only its elements move per frame.
 
+#[cfg(test)]
+#[path = "scene/material_tests.rs"]
+mod material_tests;
+
 use std::cell::Cell;
 
 use anyhow::Result;
@@ -66,17 +70,23 @@ impl Theme {
         let tint = match (material, light) {
             (Material::Standard, true) => pick(rgba(255, 255, 255, 46), rgba(226, 226, 228, 255)),
             (Material::Standard, false) => pick(rgba(28, 28, 30, 82), rgba(44, 44, 46, 255)),
-            (Material::Frosted, _) => pick(rgba(250, 251, 253, 184), rgba(236, 238, 242, 255)),
+            (Material::Frosted, true) => pick(rgba(250, 251, 253, 104), rgba(236, 238, 242, 255)),
+            (Material::Frosted, false) => pick(rgba(34, 38, 46, 144), rgba(40, 44, 52, 255)),
             (Material::Clear, _) => pick(rgba(255, 255, 255, 14), rgba(38, 40, 46, 255)),
             (Material::Aurora, _) => pick(rgba(12, 16, 42, 92), rgba(22, 22, 50, 255)),
         };
-        let (sheen, rim) = match material {
-            Material::Standard | Material::Aurora => (38, [150, 40, 30, 105]),
-            Material::Frosted => (70, [210, 70, 55, 150]),
+        let (sheen, rim) = match (material, light) {
+            (Material::Standard | Material::Aurora, _) => (38, [150, 40, 30, 105]),
+            (Material::Frosted, true) => (46, [190, 60, 50, 135]),
+            (Material::Frosted, false) => (30, [115, 35, 28, 90]),
             // All the light is on the edge, like a lens.
-            Material::Clear => (56, [235, 80, 60, 190]),
+            (Material::Clear, _) => (56, [235, 80, 60, 190]),
         };
         let panel_tint = match material {
+            // Text-bearing panels keep a denser surface than the icon-only
+            // dock. Reducing the dock's tint must not wash out popup content.
+            Material::Frosted if light => pick(rgba(250, 251, 253, 212), tint),
+            Material::Frosted => pick(rgba(30, 34, 42, 212), tint),
             Material::Clear => pick(rgba(24, 24, 28, 150), tint),
             _ => tint,
         };
@@ -113,7 +123,8 @@ impl Theme {
         let tint = match (look.material, look.light) {
             (Material::Standard, true) => pick(rgba(255, 255, 255, 110), rgba(236, 236, 238, 255)),
             (Material::Standard, false) => pick(rgba(24, 24, 26, 120), rgba(36, 36, 38, 255)),
-            (Material::Frosted, _) => pick(rgba(250, 251, 253, 196), rgba(238, 240, 244, 255)),
+            (Material::Frosted, true) => pick(rgba(250, 251, 253, 136), rgba(238, 240, 244, 255)),
+            (Material::Frosted, false) => pick(rgba(28, 32, 40, 184), rgba(38, 42, 50, 255)),
             (Material::Clear, _) => pick(rgba(0, 0, 0, 38), rgba(30, 32, 38, 255)),
             (Material::Aurora, _) => pick(rgba(10, 14, 38, 120), rgba(20, 20, 46, 255)),
         };

@@ -60,20 +60,21 @@ type Theme = Exclude<Appearance, "auto">;
 
 /** One theme's bar and dock over the wallpaper. Each layer carries its own
  * wallpaper: a clipped layer cannot blur what lies outside it. */
-function ThemeLayer({ theme, wallpaper, half }: { theme: Theme; wallpaper: string | null; half?: boolean }) {
-  return <span className="theme-layer" data-theme={theme} data-half={half ? "" : undefined}>
+function ThemeLayer({ theme, wallpaper, half, dark }: { theme: Theme; wallpaper: string | null; half?: boolean; dark?: boolean }) {
+  return <span className="theme-layer" data-theme={theme} data-half={half ? "" : undefined} data-dark={dark ? "" : undefined}>
     {wallpaper ? <img className="preview-wallpaper" src={wallpaper} alt="" /> : null}
     <span className="theme-bar"><i /><i /><i /><b /></span>
     <span className="theme-dock">{MINI_ICONS}</span>
   </span>;
 }
 
-/** The materials in CSS, as the dock draws them: `auto` shows light and
- * dark split, as macOS shows its automatic appearance. */
+/** CSS material previews. Adaptive choices show both Windows palettes. */
 export function ThemePreview({ appearance, wallpaper }: { appearance: Appearance; wallpaper: string | null }) {
   return <span className="preview-screen preview-theme">
     {appearance === "auto"
       ? <><ThemeLayer theme="light" wallpaper={wallpaper} /><ThemeLayer theme="dark" wallpaper={wallpaper} half /></>
+      : appearance === "frosted"
+      ? <><ThemeLayer theme="frosted" wallpaper={wallpaper} /><ThemeLayer theme="frosted" wallpaper={wallpaper} half dark /></>
       : <ThemeLayer theme={appearance} wallpaper={wallpaper} />}
   </span>;
 }

@@ -505,7 +505,19 @@ pub struct MenuBar {
     /// Clickable spans, in window pixels.
     zones: Vec<(f32, f32, Action)>,
     visible: bool,
+    /// Whether the bar hides now, until the pointer reaches the top edge:
+    /// always with "Automatically hide", and with "Intelligent" while the
+    /// window in front reaches under it (`covered`).
     auto_hide: bool,
+    /// The user's choice of hiding (`Config::menu_bar_auto_hide`).
+    hide_setting: bool,
+    /// Intelligent hiding (`Config::menu_bar_smart_hide`, issue #61): like
+    /// the dock's, the bar hides only while the window in front reaches
+    /// under it. It reserves no strip of the screen then, or each switch
+    /// would resize every maximized window.
+    smart: bool,
+    /// The window in front reaches under the bar (see `set_covered`).
+    covered: bool,
     /// With auto-hide on: the pointer is at the top edge, so the bar shows.
     revealed: bool,
     hide_until: Option<Instant>,
@@ -1183,6 +1195,9 @@ impl MenuBar {
             zones: Vec::new(),
             visible: true,
             auto_hide,
+            hide_setting: auto_hide,
+            smart: false,
+            covered: false,
             revealed: false,
             hide_until: None,
             animation_epoch: 0,
@@ -1266,13 +1281,91 @@ impl MenuBar {
     }
 
     pub fn set_auto_hide(&mut self, auto_hide: bool) -> Result<()> {
-        if self.auto_hide == auto_hide {
+        if self.hide_setting == auto_hide {
             return Ok(());
         }
-        self.auto_hide = auto_hide;
+        self.hide_setting = auto_hide;
+        self.apply_hiding()
+    }
+
+    /// Intelligent hiding on or off (see `smart`).
+    pub fn set_smart_hide(&mut self, smart: bool) -> Result<()> {
+        if self.smart == smart {
+            return Ok(());
+        }
+        self.smart = smart;
+        self.apply_hiding()
+    }
+
+    /// A change of setting applies at once, without animation.
+    fn apply_hiding(&mut self) -> Result<()> {
+        self.auto_hide = self.hide_setting || (self.smart && self.covered);
         self.revealed = false;
         self.hide_until = None;
+        // The reserved strip may change even when hiding does not.
         self.place()
+    }
+
+    /// Whether the bar keeps a strip of the screen for itself, so windows
+    /// are maximized below it: only while it neither auto-hides nor hides
+    /// intelligently.
+    fn reserves(&self) -> bool {
+        !self.hide_setting && !self.smart
+    }
+
+    /// Where the bar is on screen, shown or not.
+    pub fn bounds(&self) -> RECT {
+        self.bounds
+    }
+
+    /// Intelligent hiding: whether the window in front reaches under the
+    /// bar. It slides away as when the pointer leaves an auto-hiding bar,
+    /// unless the pointer is on it, and slides back once nothing covers it;
+    /// meanwhile the top edge reveals it as usual.
+    pub fn set_covered(&mut self, gfx: &Gfx, covered: bool) -> Result<()> {
+        if self.covered == covered {
+            return Ok(());
+        }
+        self.covered = covered;
+        if !self.smart || self.hide_setting {
+            return Ok(());
+        }
+        if covered {
+            // It is on screen now: hide it the way a leaving pointer does.
+            self.auto_hide = true;
+            self.revealed = true;
+            let mut point = POINT::default();
+            // SAFETY: Read-only cursor query.
+            let on_bar = unsafe { GetCursorPos(&mut point) }.is_ok()
+                && point.x >= self.bounds.left
+                && point.x < self.bounds.right
+                && point.y >= self.bounds.top
+                && point.y < self.bounds.bottom;
+            if on_bar || self.panel.is_some() || self.volume_drag.is_some() {
+                // In use: it goes once the pointer leaves, as usual.
+                return self.place();
+            }
+            return self.hover(gfx, false);
+        }
+        let was_hidden = self.auto_hide && !self.revealed;
+        self.auto_hide = false;
+        self.revealed = false;
+        self.hide_until = None;
+        self.animation_epoch = self.animation_epoch.wrapping_add(1);
+        self.exit_animation = None;
+        self.place()?;
+        if was_hidden && self.visible && system::animations_enabled() {
+            // `place` showed it in its final state; slide it in from there.
+            self.surface
+                .SetOffset(Vector3::new(0.0, -self.reveal_lift(), 0.0))?;
+            self.surface.SetOpacity(0.0)?;
+            if let Err(error) = self.animate_visibility(gfx, true) {
+                muelle_shell::log::line(&format!("animación de barra superior: {error:#}"));
+                self.reset_surface()?;
+            }
+        }
+        // Content is not refreshed while hidden.
+        self.refresh(gfx)
     }
 
     pub fn set_usage_enabled(&mut self, gfx: &Gfx, enabled: bool) -> Result<()> {
@@ -1590,7 +1683,7 @@ impl MenuBar {
     /// The strip of the screen the bar covers for good, if any: none while it
     /// auto-hides or is hidden for a full-screen app.
     pub fn reserved_strip(&self) -> Option<RECT> {
-        (self.visible && !self.auto_hide).then_some(self.bounds)
+        (self.visible && self.reserves()).then_some(self.bounds)
     }
 
     /// Positions the window and reserves (or frees) its strip of the screen.
@@ -1618,9 +1711,10 @@ impl MenuBar {
         } else if !self.auto_hide {
             self.reset_surface()?;
         }
+        // An auto-hiding or intelligent bar leaves the whole screen to the
+        // windows.
+        let strip = if self.reserves() { bar_height } else { 0 };
         if let Some(appbar) = &mut self.appbar {
-            // An auto-hiding bar leaves the whole screen to the windows.
-            let strip = if self.auto_hide { 0 } else { bar_height };
             appbar.reserve(Edge::Top, bounds, strip);
         }
         // Hidden, the bar keeps no window on screen, not even a thin strip:
@@ -4336,6 +4430,49 @@ mod island_tests {
         assert!(bar.look == drawn);
         bar.set_clock_target(None);
         assert_eq!(bar.clock_target, None);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "Hidden compositor fixture; synthetic coverage changes"]
+    fn native_intelligent_bar_hides_only_while_covered_and_reserves_nothing() -> Result<()> {
+        use windows::Win32::System::WinRT::{
+            CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT,
+            DispatcherQueueOptions,
+        };
+        let _queue = unsafe {
+            CreateDispatcherQueueController(DispatcherQueueOptions {
+                dwSize: size_of::<DispatcherQueueOptions>() as u32,
+                threadType: DQTYPE_THREAD_CURRENT,
+                apartmentType: DQTAT_COM_STA,
+            })?
+        };
+        let gfx = Gfx::new()?;
+        let mut bar = MenuBar::create(&gfx, false, false, false, MenuBarWidgets::default())?;
+        bar.set_visible(false)?;
+        bar.set_visible(true)?;
+        assert!(bar.reserved_strip().is_some());
+        bar.set_smart_hide(true)?;
+        // Intelligent: shown, but maximized windows get the whole screen.
+        assert!(!bar.auto_hide && bar.reserved_strip().is_none());
+        bar.set_covered(&gfx, true)?;
+        assert!(bar.auto_hide);
+        bar.set_covered(&gfx, false)?;
+        assert!(!bar.auto_hide && !bar.revealed && bar.hide_until.is_none());
+        // Automatically hide wins: coverage changes nothing.
+        bar.set_auto_hide(true)?;
+        bar.set_covered(&gfx, true)?;
+        assert!(bar.auto_hide);
+        bar.set_covered(&gfx, false)?;
+        assert!(bar.auto_hide);
+        // Back to intelligent while covered: hidden at once.
+        bar.set_covered(&gfx, true)?;
+        bar.set_auto_hide(false)?;
+        assert!(bar.auto_hide);
+        // Always visible: reserves its strip again and shows.
+        bar.set_smart_hide(false)?;
+        assert!(!bar.auto_hide && bar.reserved_strip().is_some());
+        bar.set_visible(false)?;
         Ok(())
     }
 

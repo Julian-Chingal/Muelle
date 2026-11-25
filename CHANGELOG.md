@@ -10,6 +10,10 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### English
 
+- Frosted glass now adapts to Windows' light/dark shell palette, with a lighter
+  tint that reveals the backdrop while keeping text panels readable (#60).
+  Material presets no longer force Settings into light or dark mode; explicit
+  Light/Dark choices still work. Windows transparency and energy policies apply.
 - Settings now offers 20 wallpapers in four masonry columns. Only small offline
   previews are bundled; full-resolution images download from GitHub on selection,
   are verified and cached for offline reuse. Opening the gallery does not fetch
@@ -27,6 +31,10 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### Español
 
+- El cristal esmerilado sigue el modo claro/oscuro de Windows, con menos tinte
+  para dejar ver el fondo y paneles legibles (#60). Los materiales ya no fuerzan
+  Ajustes a claro u oscuro; las opciones Claro/Oscuro explícitas se conservan.
+  Se respetan las políticas de transparencia y energía de Windows.
 - Ajustes ofrece 20 fondos en cuatro columnas masonry. Solo las miniaturas van
   incluidas; los originales se descargan de GitHub al elegirlos, se verifican y
   quedan disponibles sin conexión. Abrir la galería no descarga originales y un
@@ -86,6 +94,16 @@ copia la sección de la versión que se publica a la release de GitHub.
   left of the status icons; clicking it opens Task Manager. Off by default.
   While on, three cheap kernel queries every 2 s, only while the bar is on
   screen: nothing while it is hidden, auto-hidden or under a full-screen app.
+- Menu bar visibility is now one choice, as the Dock's (issue #61): Always
+  visible, Automatic or the new Intelligent, which shows the bar unless the
+  active window reaches under it, with the top edge revealing it meanwhile.
+  Intelligent reserves no strip of the screen, so maximized windows use the
+  full height. Existing choices are kept; it reuses the window events the dock
+  already follows, with no polling.
+- Opening an app that already runs in the notification area (Rainmeter, issue
+  #59) now bounces its icon twice instead of up to 10 s: such apps may open no
+  window when started again. One process lookup per click, only for apps
+  without windows.
 - Window previews always have their close button, and icons always bounce when
   an app asks for attention: both Settings switches were removed and their
   saved values are ignored.
@@ -166,6 +184,17 @@ copia la sección de la versión que se publica a la release de GitHub.
   el Administrador de tareas. Desactivado por defecto. Activado, hace tres
   consultas baratas al sistema cada 2 s y solo con la barra en pantalla: nada
   mientras está oculta, se oculta sola o hay una app a pantalla completa.
+- La visibilidad de la barra superior es ahora una sola elección, como la del
+  Dock (issue #61): Siempre visible, Automática o la nueva Inteligente, que
+  muestra la barra salvo cuando la ventana activa llega debajo de ella; mientras
+  tanto, el borde superior la muestra. Inteligente no reserva franja de
+  pantalla, así que las ventanas maximizadas usan toda la altura. Se conservan
+  las elecciones guardadas; usa los eventos de ventana que el dock ya sigue,
+  sin sondeos.
+- Abrir una app que ya está en marcha en el área de notificaciones (Rainmeter,
+  issue #59) hace rebotar su icono dos veces en vez de hasta 10 s: estas apps
+  pueden no abrir ninguna ventana al iniciarlas de nuevo. Una consulta de
+  procesos por clic, solo para apps sin ventanas.
 - Las previsualizaciones de ventanas siempre tienen su botón de cerrar y los
   iconos siempre rebotan cuando una app pide atención: se quitaron ambos
   interruptores de Ajustes y se ignoran sus valores guardados.

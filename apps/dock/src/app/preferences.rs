@@ -333,6 +333,7 @@ impl App {
             bar.set_clock_target(self.config.menu_bar_clock_target.as_deref());
             let applied = bar
                 .set_auto_hide(self.config.menu_bar_auto_hide)
+                .and_then(|()| bar.set_smart_hide(self.config.menu_bar_smart_hide))
                 .and_then(|()| bar.set_usage_enabled(&self.gfx, self.config.ai_usage))
                 .and_then(|()| bar.set_media_enabled(&self.gfx, self.config.menu_bar_music))
                 .and_then(|()| bar.set_widgets(&self.gfx, widgets))

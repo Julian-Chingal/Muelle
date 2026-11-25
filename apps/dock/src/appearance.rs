@@ -1,6 +1,6 @@
 //! The theme Settings chose for the dock, the menu bar and their menus and
-//! panels. `Auto`, the default, follows Windows' light or dark mode; the
-//! others fix both the material and whether content is drawn dark or light.
+//! panels. `Auto` and frosted glass follow Windows' light or dark mode;
+//! explicit light/dark and the clear/aurora palettes keep their chosen tone.
 //! The menu bar takes the dock's theme unless it was given its own (#54).
 //!
 //! It is process state, like the Windows theme it replaces: everything that
@@ -82,7 +82,7 @@ pub fn resolve(choice: Appearance, system_light: bool, glass: bool) -> Look {
         Appearance::Auto => (Material::Standard, system_light),
         Appearance::Light => (Material::Standard, true),
         Appearance::Dark => (Material::Standard, false),
-        Appearance::Frosted => (Material::Frosted, true),
+        Appearance::Frosted => (Material::Frosted, system_light),
         Appearance::Clear => (Material::Clear, false),
         Appearance::Aurora => (Material::Aurora, false),
     };
@@ -94,8 +94,8 @@ pub fn resolve(choice: Appearance, system_light: bool, glass: bool) -> Look {
 }
 
 fn look_of(choice: Appearance) -> Look {
-    // Only `Auto` needs the Windows theme.
-    let system_light = choice == Appearance::Auto && uses_light_theme();
+    let system_light =
+        matches!(choice, Appearance::Auto | Appearance::Frosted) && uses_light_theme();
     resolve(choice, system_light, transparency_enabled())
 }
 
@@ -130,16 +130,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn auto_follows_windows_and_the_others_do_not() {
+    fn explicit_palettes_remain_independent_of_windows() {
         for system_light in [true, false] {
             assert_eq!(
                 resolve(Appearance::Auto, system_light, true).light,
                 system_light
             );
             assert!(resolve(Appearance::Light, system_light, true).light);
-            assert!(resolve(Appearance::Frosted, system_light, true).light);
             for dark in [Appearance::Dark, Appearance::Clear, Appearance::Aurora] {
                 assert!(!resolve(dark, system_light, true).light);
+            }
+        }
+    }
+
+    #[test]
+    fn frosted_follows_windows_palette_and_preserves_the_transparency_policy() {
+        for light in [false, true] {
+            for glass in [false, true] {
+                let look = resolve(Appearance::Frosted, light, glass);
+                assert_eq!(look.material, Material::Frosted);
+                assert_eq!(look.light, light);
+                assert_eq!(look.glass, glass);
             }
         }
     }

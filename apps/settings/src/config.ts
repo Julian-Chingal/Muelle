@@ -35,6 +35,7 @@ export interface Config {
   jumpLists: boolean;
   menuBar: boolean;
   menuBarAutoHide: boolean;
+  menuBarSmartHide?: boolean;
   aiUsage: boolean;
   menuBarMusic: boolean;
   menuBarIslandStyle: IslandStyle;

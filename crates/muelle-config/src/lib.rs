@@ -90,6 +90,10 @@ pub struct Config {
     pub menu_bar: bool,
     /// Keep the menu bar off screen until the pointer touches the top edge.
     pub menu_bar_auto_hide: bool,
+    /// Intelligent hiding of the menu bar, as the dock's (issue #61): it
+    /// shows unless the window in front reaches under it. Settings offers it
+    /// and `menu_bar_auto_hide` as one choice; auto-hide wins if both are on.
+    pub menu_bar_smart_hide: bool,
     /// Show supported AI providers' plan usage in the menu bar.
     pub ai_usage: bool,
     /// Show what is playing (title, controls) in the menu bar. With this and
@@ -352,6 +356,7 @@ impl Default for Config {
             jump_lists: true,
             menu_bar: true,
             menu_bar_auto_hide: false,
+            menu_bar_smart_hide: false,
             ai_usage: true,
             menu_bar_music: true,
             menu_bar_island_style: IslandStyle::Notch,
@@ -905,6 +910,17 @@ mod tests {
             ..Config::default()
         };
         assert_eq!(config.sanitized().shortcuts_folder, None);
+    }
+
+    #[test]
+    fn the_menu_bar_stays_visible_unless_another_mode_is_chosen() -> Result<(), serde_json::Error> {
+        let fresh = Config::default();
+        assert!(!fresh.menu_bar_auto_hide && !fresh.menu_bar_smart_hide);
+        let older: Config = serde_json::from_str(r#"{"menuBarAutoHide":true}"#)?;
+        assert!(older.menu_bar_auto_hide && !older.menu_bar_smart_hide);
+        let chosen: Config = serde_json::from_str(r#"{"menuBarSmartHide":true}"#)?;
+        assert!(chosen.menu_bar_smart_hide);
+        Ok(())
     }
 
     #[test]

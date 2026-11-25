@@ -229,7 +229,7 @@ test("retired Windows status-item overrides expose no controls and create no sav
     try {
       const controls = [...elements(view.body())].filter((node) => "checked" in node.props);
       assert.deepEqual(controls.map((node) => node.props.label), [texts[language].menuBarShow,
-        texts[language].menuBarAutoHide, texts[language].menuBarMusic, texts[language].aiUsage,
+        texts[language].menuBarMusic, texts[language].aiUsage,
         texts[language].accessoryBattery, texts[language].menuBarSystemMonitor,
         texts[language].menuBarNotifications]);
       view.fire(60);
@@ -350,12 +350,27 @@ test("reset selects the new intelligent default without changing pinned apps", a
   } finally { unmount(); }
 });
 
+test("menu bar visibility is one choice of three, like the dock's", async () => {
+  const view = fixture("menubar");
+  const unmount = await view.mount();
+  try {
+    const select = [...elements(view.body())].find((node) =>
+      node.props.label === texts.en.menuBarHidingMode && "value" in node.props);
+    assert.equal(select.props.value, "visible");
+    view.change(texts.en.menuBarHidingMode, "intelligent");
+    view.change(texts.en.menuBarHidingMode, "automatic");
+    view.fire(60);
+    await settle();
+    assert.deepEqual(view.calls, [{ menuBarAutoHide: true, menuBarSmartHide: false }]);
+  } finally { unmount(); }
+});
+
 test("failed writes remain retryable and prevent closing until saved", async () => {
   let fail = true;
   const view = fixture("menubar", {}, async () => { if (fail) throw new Error("disk busy"); });
   const unmount = await view.mount();
   try {
-    view.change(texts.en.menuBarAutoHide, false);
+    view.change(texts.en.menuBarMusic, false);
     view.fire(60);
     await settle();
     assert.equal(await view.close(), true);
@@ -363,7 +378,7 @@ test("failed writes remain retryable and prevent closing until saved", async () 
     assert.ok(renderToStaticMarkup(view.body()).includes(texts.en.saveError));
     fail = false;
     assert.equal(await view.close(), false);
-    assert.deepEqual(view.calls, Array(3).fill({ menuBarAutoHide: false }));
+    assert.deepEqual(view.calls, Array(3).fill({ menuBarMusic: false }));
     assert.ok(!renderToStaticMarkup(view.body()).includes(texts.en.saveError));
   } finally { unmount(); }
 });
@@ -374,15 +389,15 @@ test("a queued newer choice wins over an earlier failed write", async () => {
     ? new Promise((_, reject) => { rejectFirst = reject; }) : Promise.resolve());
   const unmount = await view.mount();
   try {
-    view.change(texts.en.menuBarAutoHide, false);
+    view.change(texts.en.menuBarMusic, false);
     view.fire(60);
     await settle();
-    view.change(texts.en.menuBarAutoHide, true);
-    view.change(texts.en.menuBarMusic, false);
+    view.change(texts.en.menuBarMusic, true);
+    view.change(texts.en.aiUsage, false);
     view.fire(60);
     rejectFirst(new Error("disk busy"));
     await settle();
-    assert.deepEqual(view.calls, [{ menuBarAutoHide: false }, { menuBarAutoHide: true, menuBarMusic: false }]);
+    assert.deepEqual(view.calls, [{ menuBarMusic: false }, { menuBarMusic: true, aiUsage: false }]);
     assert.equal(await view.close(), false);
     assert.equal(view.calls.length, 2, "the obsolete value must not be replayed on close");
   } finally { unmount(); }
@@ -471,6 +486,28 @@ test("the theme picker offers every theme with a preview, saves only the choice 
     const picker = [...elements(old.body())].find((node) => node.props.label === texts.en.theme);
     assert.equal(picker.props.value, "auto");
   } finally { unmount(); }
+});
+
+test("material presets follow the Windows app theme instead of forcing Settings light or dark", async () => {
+  for (const appearance of ["auto", "frosted", "clear", "aurora", "light", "dark"]) {
+    const view = fixture("appearance", { appearance });
+    const unmount = await view.mount();
+    try {
+      assert.deepEqual(view.themes, [appearance === "light" || appearance === "dark" ? appearance : null], appearance);
+      assert.deepEqual(view.calls, [], "following Windows must not rewrite user preferences");
+    } finally { unmount(); }
+  }
+});
+
+test("the frosted preview explains its adaptive palette without adding another preference", () => {
+  const view = fixture("appearance", { appearance: "frosted" });
+  const picker = [...elements(view.body())].find((node) => node.props.label === texts.en.theme);
+  const frosted = picker.props.options.find((option) => option.value === "frosted");
+  assert.equal(frosted.detail, texts.en.themeAutoDetail);
+  const html = renderToStaticMarkup(frosted.preview);
+  assert.equal((html.match(/data-theme="frosted"/g) ?? []).length, 2);
+  assert.match(html, /data-dark=""/);
+  assert.match(html, /data-half=""/);
 });
 
 test("the menu bar shares the dock theme until given its own, which saves on its own key", async () => {

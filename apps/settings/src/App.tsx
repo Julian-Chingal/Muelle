@@ -270,7 +270,7 @@ export function App() {
   const themeChoices = THEMES.map((theme) => ({
     value: theme,
     label: themeName(t, theme),
-    detail: theme === "auto" ? t.themeAutoDetail : undefined,
+    detail: theme === "auto" || theme === "frosted" ? t.themeAutoDetail : undefined,
     preview: <ThemePreview appearance={theme} wallpaper={wallpaper} />,
   }));
   const appWindow = getCurrentWindow();
@@ -599,11 +599,20 @@ export function App() {
                     onChange={(menuBar) => update({ menuBar })}
                   />
                 </Row>
-                <SubRow label={t.menuBarAutoHide} hint={t.menuBarAutoHideHint} open={config.menuBar}>
-                  <Toggle
-                    label={t.menuBarAutoHide}
-                    checked={config.menuBarAutoHide}
-                    onChange={(menuBarAutoHide) => update({ menuBarAutoHide })}
+                <SubRow
+                  label={t.menuBarHidingMode}
+                  hint={config.menuBarAutoHide ? t.menuBarAutoHideHint : config.menuBarSmartHide ? t.menuBarHidingIntelligentHint : t.menuBarHidingVisibleHint}
+                  open={config.menuBar}
+                >
+                  <Select<DockHidingMode>
+                    label={t.menuBarHidingMode}
+                    value={config.menuBarAutoHide ? "automatic" : config.menuBarSmartHide ? "intelligent" : "visible"}
+                    options={[
+                      { value: "visible", label: t.dockHidingVisible },
+                      { value: "automatic", label: t.dockHidingAutomatic },
+                      { value: "intelligent", label: t.dockHidingIntelligent },
+                    ]}
+                    onChange={(mode) => update({ menuBarAutoHide: mode === "automatic", menuBarSmartHide: mode === "intelligent" })}
                   />
                 </SubRow>
                 <SubRow label={t.menuBarMusic} hint={t.menuBarMusicHint} open={config.menuBar}>
@@ -785,9 +794,9 @@ function themeName(t: Texts, theme: Appearance): string {
   }
 }
 
-/** Settings takes the theme's light or dark too, as macOS apps take its appearance. */
+/** Material presets style the shell; only explicit light/dark override Windows' app theme. */
 const windowTheme = (theme: Appearance) =>
-  theme === "auto" ? null : theme === "light" || theme === "frosted" ? "light" : "dark";
+  theme === "light" || theme === "dark" ? theme : null;
 
 function sectionTitle(t: Texts, section: SectionId): string {
   switch (section) {
