@@ -97,6 +97,16 @@ const AUDIO_TICK: u32 = WM_APP + 33;
 const BLUETOOTH_CHANGED: u32 = WM_APP + 34;
 const VOLUME_TIMER: usize = 4;
 const PROGRESS_TIMER: usize = 5;
+/// The system monitor's samples (issue #64): every 2 s while it shows, and
+/// a first one soon after it appears.
+const MONITOR_TIMER: usize = 6;
+const MONITOR_EVERY_MS: u32 = 2_000;
+const MONITOR_FIRST_MS: u32 = 500;
+/// Its two lines per column, smaller than the bar's text so both fit.
+const MONITOR_FONT: f32 = 10.0;
+/// How far each line reaches past the middle of the bar, in logical pixels.
+const MONITOR_TUCK: f32 = 1.0;
+const MONITOR_COLUMN_GAP: f32 = 8.0;
 const ACCESSORIES_CHANGED: u32 = WM_APP + 30;
 
 const CLOCK_TIMER: usize = 1;
@@ -185,6 +195,8 @@ enum Action {
     Microphone,
     Camera,
     Bluetooth,
+    /// The system monitor: Task Manager, which lists what uses each.
+    SystemMonitor,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,6 +204,8 @@ pub struct MenuBarWidgets {
     pub island_style: IslandStyle,
     /// The notification bell at the right end (`Config::menu_bar_notifications`).
     pub notifications: bool,
+    /// CPU, memory and network speed (`Config::menu_bar_system_monitor`).
+    pub system_monitor: bool,
 }
 
 impl Default for MenuBarWidgets {
@@ -199,6 +213,7 @@ impl Default for MenuBarWidgets {
         Self {
             island_style: IslandStyle::Notch,
             notifications: false,
+            system_monitor: false,
         }
     }
 }
@@ -218,6 +233,8 @@ struct Status {
 #[derive(Clone, PartialEq)]
 struct Look {
     accessories: [Option<AccessoryReading>; 2],
+    /// The system monitor's lines (see `MenuBar::monitor_lines`) while on.
+    monitor: Option<[String; 4]>,
     language: Language,
     screen: RECT,
     scale: f32,
@@ -472,6 +489,12 @@ pub struct MenuBar {
     accessories: Option<accessories::Monitor>,
     accessories_enabled: bool,
     accessory_retry_at: Instant,
+    /// The system monitor's counters, only while it samples (issue #64).
+    monitor: Option<muelle_shell::monitor::Sampler>,
+    monitor_reading: muelle_shell::monitor::Reading,
+    /// Widest each monitor column has been at this scale: digits changing
+    /// width must not shift the rest of the bar every two seconds.
+    monitor_widths: (f32, [f32; 2]),
     hwnd: HWND,
     _target: DesktopWindowTarget,
     /// Stable parent: content refreshes must not restart reveal animations.
@@ -568,6 +591,7 @@ unsafe extern "system" fn bar_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -
         WM_TIMER if w.0 == POINTER_TIMER => app::menu_bar_check_pointer(),
         WM_TIMER if w.0 == VOLUME_TIMER => app::menu_bar_volume_flush(),
         WM_TIMER if w.0 == PROGRESS_TIMER => app::menu_bar_progress_tick(),
+        WM_TIMER if w.0 == MONITOR_TIMER => app::menu_bar_monitor_tick(),
         WM_CAPTURECHANGED => {
             // Avoid reentering the app borrow inside Set/ReleaseCapture.
             unsafe {
@@ -1147,6 +1171,9 @@ impl MenuBar {
             accessories: None,
             accessories_enabled: false,
             accessory_retry_at: Instant::now() + Duration::from_secs(60),
+            monitor: None,
+            monitor_reading: muelle_shell::monitor::Reading::default(),
+            monitor_widths: (0.0, [0.0; 2]),
             hwnd,
             _target: target,
             surface,
@@ -1583,6 +1610,7 @@ impl MenuBar {
         if let Some(monitor) = &self.accessories {
             monitor.set_visible(on_screen && !hidden);
         }
+        self.sync_monitor(self.visible && !hidden);
         if !on_screen {
             // Keep the hidden tree transparent. Restoring opacity here races
             // HWND hiding and flashes its last opaque frame on the next show.
@@ -1877,6 +1905,9 @@ impl MenuBar {
             Some(Action::TaskView) => launcher::open_task_view(),
             Some(Action::Widgets) => launcher::open_widgets(),
             Some(Action::Bluetooth) => launcher::open_bluetooth(),
+            Some(Action::SystemMonitor) => {
+                let _ = launcher::open("taskmgr.exe");
+            }
             Some(Action::HiddenIcons) => launcher::toggle_hidden_icons(anchor),
             Some(Action::InputLanguage) => {} // Opened outside the app borrow.
             // Windows' own pages list which apps use each device.
@@ -1939,6 +1970,7 @@ impl MenuBar {
             accessories: self.accessories.as_ref().map_or([None, None], |monitor| {
                 accessory_readings(&monitor.snapshot())
             }),
+            monitor: self.monitor_lines(),
             language: strings::language(),
             screen: monitor.screen,
             scale: monitor.scale,
@@ -1962,6 +1994,82 @@ impl MenuBar {
             track,
         };
         self.apply_look(gfx, look)
+    }
+
+    /// Samples only while the monitor is on and the bar shows; a hidden or
+    /// auto-hidden bar costs nothing (issue #64).
+    fn sync_monitor(&mut self, shown: bool) {
+        let wanted = self.widgets.system_monitor && shown;
+        if wanted == self.monitor.is_some() {
+            return;
+        }
+        if wanted {
+            let mut sampler = muelle_shell::monitor::Sampler::default();
+            // Memory reads at once; CPU and network keep their last values
+            // until the first sample, half a second later.
+            self.monitor_reading.memory = sampler.sample().memory;
+            self.monitor = Some(sampler);
+            // SAFETY: A timer on our own window.
+            unsafe {
+                SetTimer(Some(self.hwnd), MONITOR_TIMER, MONITOR_FIRST_MS, None);
+            }
+        } else {
+            self.monitor = None;
+            // SAFETY: A timer on our own window.
+            unsafe {
+                let _ = KillTimer(Some(self.hwnd), MONITOR_TIMER);
+            }
+        }
+    }
+
+    /// A new sample of the system monitor; redraws if what it shows changed.
+    pub fn monitor_tick(&mut self, gfx: &Gfx) -> Result<()> {
+        let Some(sampler) = &mut self.monitor else {
+            return Ok(());
+        };
+        self.monitor_reading = sampler.sample();
+        // SAFETY: A timer on our own window; after the first sample, the
+        // regular interval.
+        unsafe {
+            SetTimer(Some(self.hwnd), MONITOR_TIMER, MONITOR_EVERY_MS, None);
+        }
+        let Some(mut look) = self.look.clone() else {
+            return self.refresh(gfx);
+        };
+        look.monitor = self.monitor_lines();
+        self.apply_look(gfx, look)
+    }
+
+    /// CPU and memory, then upload and download, as the bar shows them.
+    fn monitor_lines(&self) -> Option<[String; 4]> {
+        if !self.widgets.system_monitor {
+            return None;
+        }
+        let reading = self.monitor_reading;
+        let comma = matches!(
+            strings::language(),
+            Language::Es | Language::Fr | Language::Pt
+        );
+        let share = |label: &str, value: Option<u8>| {
+            value.map_or_else(|| format!("{label} —"), |value| format!("{label} {value}%"))
+        };
+        let speed = |arrow: char, value: Option<u64>| {
+            value.map_or_else(
+                || format!("{arrow} —"),
+                |value| {
+                    format!(
+                        "{arrow} {}",
+                        muelle_shell::monitor::format_rate(value, comma)
+                    )
+                },
+            )
+        };
+        Some([
+            share("CPU", reading.cpu),
+            share("RAM", reading.memory),
+            speed('↑', reading.up),
+            speed('↓', reading.down),
+        ])
     }
 
     /// Track changes only need to update the contents of the island.
@@ -2230,6 +2338,52 @@ impl MenuBar {
             if *action != Action::AccessoryIndicator {
                 self.zones.push((left - slop, zone_right + slop, *action));
             }
+            right = left - px(ITEM_GAP);
+        }
+
+        // The system monitor (issue #64), left of the status icons: two
+        // small stacked columns, CPU over memory, then upload over download.
+        if let Some(lines) = &look.monitor {
+            let brushes = lines
+                .iter()
+                .map(|line| gfx.text_brush_sized(line, scale, MONITOR_FONT, false, ink))
+                .collect::<Result<Vec<_>>>()?;
+            if self.monitor_widths.0 != scale {
+                self.monitor_widths = (scale, [0.0; 2]);
+            }
+            for (column, pair) in brushes.chunks(2).enumerate() {
+                let widest = pair.iter().map(|brush| brush.width).fold(0.0, f32::max);
+                self.monitor_widths.1[column] = self.monitor_widths.1[column].max(widest);
+            }
+            let widths = self.monitor_widths.1;
+            let zone_right = right;
+            let mut left = right;
+            for column in [1, 0] {
+                left -= widths[column];
+                for (row, brush) in brushes[column * 2..column * 2 + 2].iter().enumerate() {
+                    let top = if row == 0 {
+                        height / 2.0 - brush.height + px(MONITOR_TUCK)
+                    } else {
+                        height / 2.0 - px(MONITOR_TUCK)
+                    };
+                    let visual = c.CreateSpriteVisual()?;
+                    visual.SetSize(Vector2 {
+                        X: brush.width,
+                        Y: brush.height,
+                    })?;
+                    visual.SetOffset(Vector3 {
+                        X: left.round(),
+                        Y: top.round(),
+                        Z: 0.0,
+                    })?;
+                    visual.SetBrush(&brush.brush)?;
+                    layers.InsertAtTop(&visual)?;
+                }
+                if column == 1 {
+                    left -= px(MONITOR_COLUMN_GAP);
+                }
+            }
+            self.zones.push((left - slop, zone_right + slop, Action::SystemMonitor));
             right = left - px(ITEM_GAP);
         }
 
@@ -4182,6 +4336,75 @@ mod island_tests {
         assert!(bar.look == drawn);
         bar.set_clock_target(None);
         assert_eq!(bar.clock_target, None);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "Hidden compositor fixture; synthetic monitor readings"]
+    fn native_system_monitor_keeps_its_place_and_samples_only_while_shown() -> Result<()> {
+        use anyhow::Context;
+        use windows::Win32::System::WinRT::{
+            CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT,
+            DispatcherQueueOptions,
+        };
+        let _queue = unsafe {
+            CreateDispatcherQueueController(DispatcherQueueOptions {
+                dwSize: size_of::<DispatcherQueueOptions>() as u32,
+                threadType: DQTYPE_THREAD_CURRENT,
+                apartmentType: DQTAT_COM_STA,
+            })?
+        };
+        let gfx = Gfx::new()?;
+        let widgets = MenuBarWidgets {
+            system_monitor: true,
+            ..MenuBarWidgets::default()
+        };
+        let mut bar = MenuBar::create(&gfx, false, false, false, widgets)?;
+        bar.set_visible(false)?;
+        // Hidden, nothing is sampled.
+        assert!(bar.monitor.is_none());
+        let mut look = bar.look.clone().context("initial look")?;
+        look.screen = RECT {
+            left: 0,
+            top: 0,
+            right: 1920,
+            bottom: 1080,
+        };
+        let lines = |cpu: &str, down: &str| {
+            [
+                format!("CPU {cpu}"),
+                "RAM 48%".to_owned(),
+                "↑ 12 KB/s".to_owned(),
+                format!("↓ {down}"),
+            ]
+        };
+        let zone = |bar: &MenuBar| {
+            bar.zones
+                .iter()
+                .find(|(_, _, action)| *action == Action::SystemMonitor)
+                .map(|(left, right, _)| (*left, *right))
+        };
+        look.monitor = None;
+        bar.apply_look(&gfx, look.clone())?;
+        assert_eq!(zone(&bar), None);
+        look.monitor = Some(lines("5%", "0 KB/s"));
+        bar.apply_look(&gfx, look.clone())?;
+        let narrow = zone(&bar).context("monitor zone")?;
+        // The last zone pushed is the leftmost: the monitor sits left of
+        // every status icon.
+        assert_eq!(
+            bar.zones.last().map(|(_, _, action)| *action),
+            Some(Action::SystemMonitor)
+        );
+        look.monitor = Some(lines("100%", "35,5 MB/s"));
+        bar.apply_look(&gfx, look.clone())?;
+        let wide = zone(&bar).context("monitor zone")?;
+        assert!(wide.0 < narrow.0 && wide.1 == narrow.1);
+        // Narrower digits again: the columns keep their widest size, so the
+        // rest of the bar does not shift back and forth.
+        look.monitor = Some(lines("5%", "0 KB/s"));
+        bar.apply_look(&gfx, look)?;
+        assert_eq!(zone(&bar), Some(wide));
         Ok(())
     }
 

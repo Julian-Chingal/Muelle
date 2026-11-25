@@ -643,6 +643,13 @@ export function App() {
                     onChange={(accessoryBattery) => update({ accessoryBattery })}
                   />
                 </SubRow>
+                <SubRow label={t.menuBarSystemMonitor} hint={t.menuBarSystemMonitorHint} open={config.menuBar}>
+                  <Toggle
+                    label={t.menuBarSystemMonitor}
+                    checked={config.menuBarSystemMonitor ?? false}
+                    onChange={(menuBarSystemMonitor) => update({ menuBarSystemMonitor })}
+                  />
+                </SubRow>
                 <SubRow label={t.menuBarNotifications} hint={t.menuBarNotificationsHint} open={config.menuBar}>
                   <Toggle
                     label={t.menuBarNotifications}

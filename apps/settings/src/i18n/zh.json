@@ -65,6 +65,8 @@
   "islandStyleBubble": "气泡",
   "accessoryBattery": "显示配件电量",
   "accessoryBatteryHint": "支持的鼠标和耳机。关闭时不查询设备。",
+  "menuBarSystemMonitor": "系统监视器",
+  "menuBarSystemMonitorHint": "在状态图标旁显示 CPU、内存和网速。点击可打开任务管理器。关闭时不进行任何测量。",
   "menuBarNotifications": "通知按钮",
   "menuBarNotificationsHint": "在最右侧显示一个铃铛，点击可打开 Windows 通知中心。",
   "clockTarget": "点击时钟打开",
@@ -140,11 +142,11 @@
   "dockHidingAutomaticHint": "保持隐藏，将指针停在边缘时显示，桌面上也如此。",
   "dockHidingIntelligentHint": "在桌面上显示，活动窗口与其重叠时隐藏。",
   "wallpaperGalleryTitle": "壁纸",
-  "wallpaperGalleryHint": "选择图片，替换显示器上的 Windows 背景。",
+  "wallpaperGalleryHint": "选择时下载，已保存的壁纸可离线使用。",
   "wallpaperApplyLabel": "将{name}设为壁纸",
-  "wallpaperApplying": "正在应用壁纸…",
+  "wallpaperApplying": "正在准备壁纸…",
   "wallpaperApplied": "壁纸已应用。",
-  "wallpaperApplyError": "无法更改壁纸，请重试。",
+  "wallpaperApplyError": "无法下载或应用壁纸，请重试。",
   "wallpaperNames": [
     "紫色山峰",
     "彩色波浪",
@@ -157,6 +159,14 @@
     "樱花",
     "晨曦草地",
     "地平线",
-    "蓝天"
+    "蓝天",
+    "旧金山",
+    "海岸暮色",
+    "遐想",
+    "宁静街道",
+    "空间站",
+    "傍晚骑行",
+    "山巅",
+    "东京之夜"
   ]
 }

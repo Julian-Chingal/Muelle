@@ -23,6 +23,9 @@ tauri-plugin-single-instance = "2"
 serde_json = "1"
 base64 = "0.23"
 png = "0.18"
+# Reuse the Dock's HTTP/TLS stack; instantiated only for an uncached choice.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "system-proxy"] }
+sha2 = "0.10"
 windows = { workspace = true, features = ["Win32_System_Com", "Win32_UI_Shell"] }
 
 [features]

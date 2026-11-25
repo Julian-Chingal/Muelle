@@ -65,6 +65,8 @@
   "islandStyleBubble": "Bubble",
   "accessoryBattery": "Show accessory battery",
   "accessoryBatteryHint": "Supported mice and headsets. No device queries while off.",
+  "menuBarSystemMonitor": "System monitor",
+  "menuBarSystemMonitorHint": "CPU, memory and network speed next to the status icons. Clicking it opens Task Manager. Nothing is measured while off.",
   "menuBarNotifications": "Notifications button",
   "menuBarNotificationsHint": "A bell at the right end that opens the Windows notification center.",
   "clockTarget": "Clock opens",
@@ -140,11 +142,11 @@
   "dockHidingAutomaticHint": "Hidden until you rest the pointer at its edge, even on the desktop.",
   "dockHidingIntelligentHint": "Visible on the desktop. Hides when the active window overlaps it.",
   "wallpaperGalleryTitle": "Wallpapers",
-  "wallpaperGalleryHint": "Choose an image to replace the Windows background on your displays.",
+  "wallpaperGalleryHint": "Downloads once when selected; saved wallpapers work offline.",
   "wallpaperApplyLabel": "Use {name} as wallpaper",
-  "wallpaperApplying": "Applying wallpaper…",
+  "wallpaperApplying": "Preparing wallpaper…",
   "wallpaperApplied": "Wallpaper applied.",
-  "wallpaperApplyError": "Could not change the wallpaper. Try again.",
+  "wallpaperApplyError": "Could not download or apply the wallpaper. Try again.",
   "wallpaperNames": [
     "Purple peaks",
     "Color waves",
@@ -157,6 +159,14 @@
     "Cherry blossoms",
     "Meadow at sunrise",
     "Horizon",
-    "Blue sky"
+    "Blue sky",
+    "San Francisco",
+    "Coastal dusk",
+    "Daydream",
+    "Quiet street",
+    "Space station",
+    "Evening ride",
+    "Summit",
+    "Tokyo at night"
   ]
 }

@@ -22,6 +22,8 @@ windows = { workspace = true, features = [
     "Win32_Graphics_Imaging",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
     "Win32_Storage_EnhancedStorage",
     "Win32_Storage_FileSystem",
     "Win32_Storage_Packaging_Appx",

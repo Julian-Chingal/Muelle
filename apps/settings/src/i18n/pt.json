@@ -65,6 +65,8 @@
   "islandStyleBubble": "Bolha",
   "accessoryBattery": "Mostrar bateria de acessórios",
   "accessoryBatteryHint": "Mouses e fones compatíveis. Não consulta dispositivos quando desativado.",
+  "menuBarSystemMonitor": "Monitor do sistema",
+  "menuBarSystemMonitorHint": "CPU, memória e velocidade da rede ao lado dos ícones de estado. Um clique abre o Gerenciador de Tarefas. Desligado, nada é medido.",
   "menuBarNotifications": "Botão de notificações",
   "menuBarNotificationsHint": "Um sino na extremidade direita que abre a central de notificações do Windows.",
   "clockTarget": "O relógio abre",
@@ -140,11 +142,11 @@
   "dockHidingAutomaticHint": "Oculto até manter o ponteiro na borda, inclusive na área de trabalho.",
   "dockHidingIntelligentHint": "Visível na área de trabalho. Oculta quando a janela ativa se sobrepõe a ele.",
   "wallpaperGalleryTitle": "Papéis de parede",
-  "wallpaperGalleryHint": "Escolha uma imagem para substituir o fundo do Windows nas suas telas.",
+  "wallpaperGalleryHint": "Baixado ao escolher. Os fundos salvos funcionam sem conexão.",
   "wallpaperApplyLabel": "Usar {name} como papel de parede",
-  "wallpaperApplying": "Aplicando papel de parede…",
+  "wallpaperApplying": "Preparando fundo…",
   "wallpaperApplied": "Papel de parede aplicado.",
-  "wallpaperApplyError": "Não foi possível alterar o papel de parede. Tente novamente.",
+  "wallpaperApplyError": "Não foi possível baixar ou aplicar o fundo. Tente novamente.",
   "wallpaperNames": [
     "Picos roxos",
     "Ondas de cores",
@@ -157,6 +159,14 @@
     "Flores de cerejeira",
     "Prado ao amanhecer",
     "Horizonte",
-    "Céu azul"
+    "Céu azul",
+    "San Francisco",
+    "Entardecer na costa",
+    "Devaneio",
+    "Rua tranquila",
+    "Estação espacial",
+    "Passeio ao entardecer",
+    "Cume",
+    "Tóquio à noite"
   ]
 }

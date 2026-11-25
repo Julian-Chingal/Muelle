@@ -10,6 +10,10 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### English
 
+- Settings now offers 20 wallpapers in four masonry columns. Only small offline
+  previews are bundled; full-resolution images download from GitHub on selection,
+  are verified and cached for offline reuse. Opening the gallery does not fetch
+  originals, and download failures preserve the current wallpaper.
 - Changing a wallpaper from Settings now notifies the Dock directly and renews
   existing glass surfaces without waiting for a theme change. Wallpaper and DWM
   notifications preserve open previews and player controls when the theme is
@@ -23,6 +27,10 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### Español
 
+- Ajustes ofrece 20 fondos en cuatro columnas masonry. Solo las miniaturas van
+  incluidas; los originales se descargan de GitHub al elegirlos, se verifican y
+  quedan disponibles sin conexión. Abrir la galería no descarga originales y un
+  fallo de descarga conserva el fondo actual.
 - Cambiar el fondo desde Ajustes ahora avisa directamente al Dock y renueva el
   cristal existente sin esperar un cambio de tema. Las notificaciones del fondo
   y de DWM conservan las previsualizaciones y controles abiertos si el tema no
@@ -73,6 +81,11 @@ copia la sección de la versión que se publica a la release de GitHub.
   them grow to the whole screen, where the Dock and the menu bar covered their
   scroll arrows; each list now fits between the two, so both arrows show and
   scroll it on hover, as in any Windows menu.
+- Optional system monitor in the menu bar (issue #64), under Settings > Menu
+  bar: CPU and memory over upload and download speed, in two small columns
+  left of the status icons; clicking it opens Task Manager. Off by default.
+  While on, three cheap kernel queries every 2 s, only while the bar is on
+  screen: nothing while it is hidden, auto-hidden or under a full-screen app.
 - Window previews always have their close button, and icons always bounce when
   an app asks for attention: both Settings switches were removed and their
   saved values are ignored.
@@ -147,6 +160,12 @@ copia la sección de la versión que se publica a la release de GitHub.
   la barra superior tapaban sus flechas de desplazamiento; ahora cada lista cabe
   entre ambos, así que las dos flechas se ven y la desplazan al pasar el ratón,
   como en cualquier menú de Windows.
+- Monitor del sistema opcional en la barra superior (issue #64), en Ajustes >
+  Barra superior: CPU y memoria sobre la velocidad de subida y bajada, en dos
+  columnas pequeñas a la izquierda de los iconos de estado; al hacer clic abre
+  el Administrador de tareas. Desactivado por defecto. Activado, hace tres
+  consultas baratas al sistema cada 2 s y solo con la barra en pantalla: nada
+  mientras está oculta, se oculta sola o hay una app a pantalla completa.
 - Las previsualizaciones de ventanas siempre tienen su botón de cerrar y los
   iconos siempre rebotan cuando una app pide atención: se quitaron ambos
   interruptores de Ajustes y se ignoran sus valores guardados.

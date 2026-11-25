@@ -12,6 +12,7 @@ import { transformWithEsbuild } from "vite";
 // Exercise the actual App and controls without WebView, registry, network or timers.
 // Compilation alone cannot catch a conditional accidentally rendered as JSX text.
 const source = fileURLToPath(new URL("../src/", import.meta.url));
+const wallpaperCount = JSON.parse(readFileSync(new URL("../wallpapers/catalog.json", import.meta.url), "utf8")).length;
 const require = createRequire(import.meta.url);
 const compiled = new Map();
 for (const file of readdirSync(source).filter((name) => /\.tsx?$/.test(name))) {
@@ -144,16 +145,16 @@ test("each section renders only its own controls, in every language and visibili
 
 const wallpaperButtons = (view) => [...elements(view.body())].filter((node) => node.type === "button" && "data-wallpaper-id" in node.props);
 
-test("the offline wallpaper gallery is optional and appears only inside Appearance", () => {
+test("the gallery bundles only offline previews and appears only inside Appearance", () => {
   for (const language of Object.keys(texts)) {
-    assert.equal(texts[language].wallpaperNames.length, 12);
+    assert.equal(texts[language].wallpaperNames.length, wallpaperCount);
     for (const section of ["appearance", "dock", "windows", "menubar", "system"]) {
       const view = fixture(section, { language });
       const html = renderToStaticMarkup(view.body());
-      assert.equal((html.match(/class="wallpaper-choice"/g) ?? []).length, section === "appearance" ? 12 : 0);
+      assert.equal((html.match(/class="wallpaper-choice"/g) ?? []).length, section === "appearance" ? wallpaperCount : 0);
       if (section === "appearance") {
-        assert.equal((html.match(/loading="lazy"/g) ?? []).length, 12);
-        assert.doesNotMatch(html, /https:\/\/openvid\.dev/);
+        assert.equal((html.match(/loading="lazy"/g) ?? []).length, wallpaperCount);
+        assert.doesNotMatch(html, /https?:\/\//, "opening the gallery never loads remote images");
       }
       assert.deepEqual(view.wallpaperCalls, [], "rendering must never change the desktop");
     }
@@ -188,18 +189,14 @@ test("a rejected wallpaper change preserves the previous selection and can be re
   });
   const unmount = await view.mount();
   try {
-    const errors = [];
-    const originalConsoleError = console.error;
-    console.error = (...args) => errors.push(args);
-    try { await wallpaperButtons(view)[8].props.onClick(); }
-    finally { console.error = originalConsoleError; }
-    assert.equal(errors.length, 1);
-    assert.equal(errors[0][0], "Failed to apply wallpaper:");
+    await wallpaperButtons(view)[8].props.onClick();
     assert.equal(wallpaperButtons(view).find((button) => button.props["aria-pressed"]).props["data-wallpaper-id"], 2);
     assert.equal(view.wallpaperPreviews.length, 0);
-    assert.doesNotMatch(renderToStaticMarkup(view.body()), /wallpaper-status/);
+    assert.match(renderToStaticMarkup(view.body()), /role="alert"/);
+    assert.ok(renderToStaticMarkup(view.body()).includes(texts.en.wallpaperApplyError));
     reject = false;
     await wallpaperButtons(view)[8].props.onClick();
+    assert.doesNotMatch(renderToStaticMarkup(view.body()), /role="alert"/);
     assert.equal(wallpaperButtons(view).find((button) => button.props["aria-pressed"]).props["data-wallpaper-id"], 9);
     assert.deepEqual(view.wallpaperCalls, [{ id: 9 }, { id: 9 }]);
   } finally { unmount(); }
@@ -233,7 +230,8 @@ test("retired Windows status-item overrides expose no controls and create no sav
       const controls = [...elements(view.body())].filter((node) => "checked" in node.props);
       assert.deepEqual(controls.map((node) => node.props.label), [texts[language].menuBarShow,
         texts[language].menuBarAutoHide, texts[language].menuBarMusic, texts[language].aiUsage,
-        texts[language].accessoryBattery, texts[language].menuBarNotifications]);
+        texts[language].accessoryBattery, texts[language].menuBarSystemMonitor,
+        texts[language].menuBarNotifications]);
       view.fire(60);
       await settle();
       assert.deepEqual(view.calls, []);

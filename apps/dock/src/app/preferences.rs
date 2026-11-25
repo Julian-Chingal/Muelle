@@ -314,6 +314,7 @@ impl App {
         let widgets = MenuBarWidgets {
             island_style: self.config.menu_bar_island_style,
             notifications: self.config.menu_bar_notifications,
+            system_monitor: self.config.menu_bar_system_monitor,
         };
         if !self.config.menu_bar {
             self.menubar = None;

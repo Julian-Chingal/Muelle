@@ -12,6 +12,7 @@ pub mod jumplist;
 pub mod keyboard;
 pub mod launcher;
 pub mod log;
+pub mod monitor;
 pub mod names;
 pub mod pins;
 pub mod power;

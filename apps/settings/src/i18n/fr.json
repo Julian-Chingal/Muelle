@@ -65,6 +65,8 @@
   "islandStyleBubble": "Bulle",
   "accessoryBattery": "Afficher la batterie des accessoires",
   "accessoryBatteryHint": "Souris et casques compatibles. Aucune interrogation si désactivé.",
+  "menuBarSystemMonitor": "Moniteur système",
+  "menuBarSystemMonitorHint": "Processeur, mémoire et débit réseau à côté des icônes d'état. Un clic ouvre le Gestionnaire des tâches. Désactivé, rien n'est mesuré.",
   "menuBarNotifications": "Bouton de notifications",
   "menuBarNotificationsHint": "Une cloche à l’extrémité droite qui ouvre le centre de notifications de Windows.",
   "clockTarget": "L’horloge ouvre",
@@ -140,11 +142,11 @@
   "dockHidingAutomaticHint": "Masqué jusqu’à ce que le pointeur reste sur son bord, même sur le bureau.",
   "dockHidingIntelligentHint": "Visible sur le bureau. Se masque si la fenêtre active le recouvre.",
   "wallpaperGalleryTitle": "Fonds d’écran",
-  "wallpaperGalleryHint": "Choisissez une image pour remplacer le fond Windows sur vos écrans.",
+  "wallpaperGalleryHint": "Téléchargé à la sélection. Les fonds enregistrés fonctionnent hors ligne.",
   "wallpaperApplyLabel": "Utiliser {name} comme fond",
-  "wallpaperApplying": "Application du fond…",
+  "wallpaperApplying": "Préparation du fond…",
   "wallpaperApplied": "Fond appliqué.",
-  "wallpaperApplyError": "Impossible de changer le fond. Réessayez.",
+  "wallpaperApplyError": "Impossible de télécharger ou d’appliquer le fond. Réessayez.",
   "wallpaperNames": [
     "Sommets violets",
     "Vagues de couleurs",
@@ -157,6 +159,14 @@
     "Cerisiers",
     "Prairie à l’aube",
     "Horizon",
-    "Ciel bleu"
+    "Ciel bleu",
+    "San Francisco",
+    "Crépuscule côtier",
+    "Rêverie",
+    "Rue tranquille",
+    "Station spatiale",
+    "Balade du soir",
+    "Sommet",
+    "Tokyo la nuit"
   ]
 }

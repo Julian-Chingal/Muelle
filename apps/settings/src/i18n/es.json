@@ -65,6 +65,8 @@
   "islandStyleBubble": "Burbuja",
   "accessoryBattery": "Mostrar batería de accesorios",
   "accessoryBatteryHint": "Ratones y auriculares compatibles. Apagado, no los consulta.",
+  "menuBarSystemMonitor": "Monitor del sistema",
+  "menuBarSystemMonitorHint": "CPU, memoria y velocidad de red junto a los iconos de estado. Al hacer clic abre el Administrador de tareas. Apagado, no mide nada.",
   "menuBarNotifications": "Botón de notificaciones",
   "menuBarNotificationsHint": "Una campana en el extremo derecho que abre el centro de notificaciones de Windows.",
   "clockTarget": "El reloj abre",
@@ -140,11 +142,11 @@
   "dockHidingAutomaticHint": "Se oculta hasta que dejes el puntero en su borde, incluso en el escritorio.",
   "dockHidingIntelligentHint": "Visible en el escritorio. Se oculta si la ventana activa ocupa su espacio.",
   "wallpaperGalleryTitle": "Fondos de pantalla",
-  "wallpaperGalleryHint": "Elige una imagen para reemplazar el fondo de Windows en tus pantallas.",
+  "wallpaperGalleryHint": "Se descarga al elegirlo. Los fondos guardados funcionan sin conexión.",
   "wallpaperApplyLabel": "Usar {name} como fondo",
-  "wallpaperApplying": "Aplicando fondo…",
+  "wallpaperApplying": "Preparando fondo…",
   "wallpaperApplied": "Fondo aplicado.",
-  "wallpaperApplyError": "No se pudo cambiar el fondo. Inténtalo de nuevo.",
+  "wallpaperApplyError": "No se pudo descargar o aplicar el fondo. Inténtalo de nuevo.",
   "wallpaperNames": [
     "Cumbres violetas",
     "Ondas de color",
@@ -157,6 +159,14 @@
     "Cerezos",
     "Pradera al amanecer",
     "Horizonte",
-    "Cielo azul"
+    "Cielo azul",
+    "San Francisco",
+    "Costa al anochecer",
+    "Ensoñación",
+    "Calle tranquila",
+    "Estación espacial",
+    "Paseo al atardecer",
+    "Cima",
+    "Tokio de noche"
   ]
 }

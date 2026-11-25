@@ -43,6 +43,7 @@ export interface Config {
   /** What the clock opens (an app, shortcut or URI); null for the notification center. */
   menuBarClockTarget: string | null;
   accessoryBattery: boolean;
+  menuBarSystemMonitor?: boolean;
   showIndicators: boolean;
   showRecents: boolean;
   bounceOnOpen: boolean;

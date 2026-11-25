@@ -65,6 +65,8 @@
   "islandStyleBubble": "فقاعة",
   "accessoryBattery": "إظهار بطارية الملحقات",
   "accessoryBatteryHint": "للماوس وسماعات الرأس المدعومة. لا تُستعلم الأجهزة عند التعطيل.",
+  "menuBarSystemMonitor": "مراقب النظام",
+  "menuBarSystemMonitorHint": "المعالج والذاكرة وسرعة الشبكة بجانب أيقونات الحالة. النقر عليه يفتح إدارة المهام. لا يُقاس شيء عند إيقافه.",
   "menuBarNotifications": "زر الإشعارات",
   "menuBarNotificationsHint": "جرس في الطرف الأيمن يفتح مركز الإشعارات في Windows.",
   "clockTarget": "النقر على الساعة يفتح",
@@ -140,11 +142,11 @@
   "dockHidingAutomaticHint": "مخفي حتى تبقي المؤشر عند حافته، حتى على سطح المكتب.",
   "dockHidingIntelligentHint": "ظاهر على سطح المكتب ويختفي عندما تتداخل النافذة النشطة معه.",
   "wallpaperGalleryTitle": "خلفيات الشاشة",
-  "wallpaperGalleryHint": "اختر صورة لاستبدال خلفية Windows على شاشاتك.",
+  "wallpaperGalleryHint": "يُنزل عند اختياره. الخلفيات المحفوظة تعمل دون اتصال.",
   "wallpaperApplyLabel": "استخدام {name} كخلفية",
-  "wallpaperApplying": "جارٍ تطبيق الخلفية…",
+  "wallpaperApplying": "جارٍ تجهيز الخلفية…",
   "wallpaperApplied": "تم تطبيق الخلفية.",
-  "wallpaperApplyError": "تعذر تغيير الخلفية. حاول مجددًا.",
+  "wallpaperApplyError": "تعذر تنزيل الخلفية أو تطبيقها. حاول مجدداً.",
   "wallpaperNames": [
     "قمم بنفسجية",
     "موجات الألوان",
@@ -157,6 +159,14 @@
     "أزهار الكرز",
     "مرج عند الشروق",
     "الأفق",
-    "سماء زرقاء"
+    "سماء زرقاء",
+    "سان فرانسيسكو",
+    "غسق الساحل",
+    "أحلام اليقظة",
+    "شارع هادئ",
+    "محطة فضائية",
+    "جولة مسائية",
+    "القمة",
+    "طوكيو ليلاً"
   ]
 }

@@ -173,6 +173,13 @@ pub fn menu_bar_progress_tick() {
     });
 }
 
+pub fn menu_bar_monitor_tick() {
+    with_app("monitor del sistema", |app| match &mut app.menubar {
+        Some(bar) => bar.monitor_tick(&app.gfx),
+        None => Ok(()),
+    });
+}
+
 pub fn menu_bar_media_changed() {
     with_app("reproducción", |app| match &mut app.menubar {
         Some(bar) => bar.media_changed(&app.gfx),

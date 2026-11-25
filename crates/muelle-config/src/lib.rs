@@ -106,6 +106,10 @@ pub struct Config {
     /// (e.g. the Clock app or a calendar). `None` keeps the notification
     /// center and calendar, as on the Windows taskbar.
     pub menu_bar_clock_target: Option<String>,
+    /// CPU, memory and network speed in the menu bar (issue #64). Off by
+    /// default: off, nothing is sampled; on, every 2 s only while the bar
+    /// is on screen.
+    pub menu_bar_system_monitor: bool,
     /// Opt-in peripheral monitoring. Off means no accessory reader or queries.
     pub accessory_battery: bool,
     /// The dot under apps that have windows open.
@@ -352,6 +356,7 @@ impl Default for Config {
             menu_bar_music: true,
             menu_bar_island_style: IslandStyle::Notch,
             menu_bar_notifications: false,
+            menu_bar_system_monitor: false,
             menu_bar_clock_target: None,
             accessory_battery: false,
             show_indicators: true,
@@ -900,6 +905,16 @@ mod tests {
             ..Config::default()
         };
         assert_eq!(config.sanitized().shortcuts_folder, None);
+    }
+
+    #[test]
+    fn the_system_monitor_is_off_unless_chosen() -> Result<(), serde_json::Error> {
+        assert!(!Config::default().menu_bar_system_monitor);
+        let older: Config = serde_json::from_str("{}")?;
+        assert!(!older.menu_bar_system_monitor);
+        let chosen: Config = serde_json::from_str(r#"{"menuBarSystemMonitor":true}"#)?;
+        assert!(chosen.menu_bar_system_monitor);
+        Ok(())
     }
 
     #[test]
