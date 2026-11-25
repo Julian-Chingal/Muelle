@@ -59,7 +59,9 @@ impl Sampler {
         };
         let reading = Reading {
             memory: memory_load(),
-            ..self.last.map_or_else(Reading::default, |last| between(&last, &now))
+            ..self
+                .last
+                .map_or_else(Reading::default, |last| between(&last, &now))
         };
         self.last = Some(now);
         reading
@@ -83,15 +85,15 @@ fn between(last: &Totals, now: &Totals) -> Reading {
                 total_now.checked_sub(total_then)?,
             )
         });
-    let (down, up) = last
-        .network
-        .zip(now.network)
-        .map_or((None, None), |((in_then, out_then), (in_now, out_now))| {
+    let (down, up) = last.network.zip(now.network).map_or(
+        (None, None),
+        |((in_then, out_then), (in_now, out_now))| {
             (
                 rate(in_then, in_now, seconds),
                 rate(out_then, out_now, seconds),
             )
-        });
+        },
+    );
     Reading {
         cpu,
         memory: None,
@@ -119,10 +121,15 @@ fn rate(then: u64, now: u64, seconds: f64) -> Option<u64> {
 }
 
 fn cpu_times() -> Option<(u64, u64)> {
-    let (mut idle, mut kernel, mut user) = (FILETIME::default(), FILETIME::default(), FILETIME::default());
+    let (mut idle, mut kernel, mut user) = (
+        FILETIME::default(),
+        FILETIME::default(),
+        FILETIME::default(),
+    );
     // SAFETY: Three valid out parameters for the duration of the call.
     unsafe { GetSystemTimes(Some(&mut idle), Some(&mut kernel), Some(&mut user)) }.ok()?;
-    let ticks = |time: FILETIME| u64::from(time.dwHighDateTime) << 32 | u64::from(time.dwLowDateTime);
+    let ticks =
+        |time: FILETIME| u64::from(time.dwHighDateTime) << 32 | u64::from(time.dwLowDateTime);
     Some((ticks(idle), ticks(kernel) + ticks(user)))
 }
 
@@ -183,7 +190,11 @@ pub fn format_rate(bytes_per_second: u64, comma: bool) -> String {
     let value = bytes_per_second as f64;
     let decimal = |amount: f64, unit: &str| {
         let text = format!("{amount:.1} {unit}");
-        if comma { text.replacen('.', ",", 1) } else { text }
+        if comma {
+            text.replacen('.', ",", 1)
+        } else {
+            text
+        }
     };
     // Each unit starts where the previous one would round to 4 digits.
     if value < 999.5 * KB {

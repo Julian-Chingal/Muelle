@@ -861,7 +861,9 @@ mod tests {
             this.rsplit('\\').next().unwrap_or_default()
         );
         assert!(!is_running(&elsewhere));
-        assert!(!is_running("shell:AppsFolder\\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"));
+        assert!(!is_running(
+            "shell:AppsFolder\\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"
+        ));
         Ok(())
     }
 

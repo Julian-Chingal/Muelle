@@ -2477,7 +2477,8 @@ impl MenuBar {
                     left -= px(MONITOR_COLUMN_GAP);
                 }
             }
-            self.zones.push((left - slop, zone_right + slop, Action::SystemMonitor));
+            self.zones
+                .push((left - slop, zone_right + slop, Action::SystemMonitor));
             right = left - px(ITEM_GAP);
         }
 
