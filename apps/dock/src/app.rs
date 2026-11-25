@@ -148,6 +148,10 @@ const HOVER_OMEGA: f32 = 28.0;
 const BOUNCE_HEIGHT: f32 = 0.5;
 const LAUNCH_BOUNCE_LIMIT: f32 = 10.0;
 const ATTENTION_HOPS: f32 = 3.0;
+/// Opening an app that already runs without windows (in the notification
+/// area): it may show nothing (issue #59), so a short acknowledgement
+/// instead of bouncing until the limit.
+const RUNNING_LAUNCH_HOPS: f32 = 2.0;
 
 // Dimensions are in logical pixels and are multiplied by the display scale.
 /// Gap between the dock and the bottom screen edge, and between the dock and

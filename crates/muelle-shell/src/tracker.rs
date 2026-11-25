@@ -197,6 +197,77 @@ pub fn visible_rect(hwnd: isize) -> Option<RECT> {
     Some(if framed.is_ok() { rect } else { whole })
 }
 
+/// Whether the program `app_id` (an executable path, as `normalize_id`
+/// writes it) has a process running, windows or not: an app that lives in
+/// the notification area, such as Rainmeter. Packaged apps are not looked
+/// up: always `false`.
+///
+/// One process snapshot; only processes with the same file name are opened.
+#[must_use]
+pub fn is_running(app_id: &str) -> bool {
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+        TH32CS_SNAPPROCESS,
+    };
+    if app_id.starts_with(APPS_FOLDER) {
+        return false;
+    }
+    let Some(name) = std::path::Path::new(app_id)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_lowercase)
+    else {
+        return false;
+    };
+    // SAFETY: The snapshot is closed below; `entry` has its size set and
+    // belongs to it.
+    unsafe {
+        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
+            return false;
+        };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        let mut found = false;
+        let mut more = Process32FirstW(snapshot, &mut entry).is_ok();
+        while more && !found {
+            let len = entry
+                .szExeFile
+                .iter()
+                .position(|&unit| unit == 0)
+                .unwrap_or(entry.szExeFile.len());
+            if String::from_utf16_lossy(&entry.szExeFile[..len]).to_lowercase() == name {
+                found = process_image(entry.th32ProcessID)
+                    .is_some_and(|image| normalize_id(&image) == app_id);
+            }
+            more = Process32NextW(snapshot, &mut entry).is_ok();
+        }
+        let _ = CloseHandle(snapshot);
+        found
+    }
+}
+
+/// The executable a process runs, if it can be queried.
+fn process_image(pid: u32) -> Option<String> {
+    // SAFETY: The handle is closed before returning; the buffer has the
+    // declared length.
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buffer = [0u16; 1024];
+        let mut len = buffer.len() as u32;
+        let read = QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut len,
+        )
+        .is_ok();
+        let _ = CloseHandle(process);
+        read.then(|| String::from_utf16_lossy(&buffer[..len as usize]))
+    }
+}
+
 /// How far a window's top edge (`visible`) must drop for its title bar to
 /// clear `strip`, the screen strip the menu bar keeps for itself; `None` when
 /// it is not under it.
@@ -779,6 +850,20 @@ pub fn request_close_window(hwnd: isize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_running_program_is_found_by_its_full_path() -> std::io::Result<()> {
+        let this = normalize_id(&std::env::current_exe()?.to_string_lossy());
+        assert!(is_running(&this));
+        // Same file name, another folder: not the same program.
+        let elsewhere = format!(
+            "c:\\no-such-folder\\{}",
+            this.rsplit('\\').next().unwrap_or_default()
+        );
+        assert!(!is_running(&elsewhere));
+        assert!(!is_running("shell:AppsFolder\\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"));
+        Ok(())
+    }
 
     #[test]
     fn only_windows_under_the_menu_bar_drop_below_it() {

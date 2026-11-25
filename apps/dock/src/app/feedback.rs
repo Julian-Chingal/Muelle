@@ -19,7 +19,7 @@ use crate::{mascot, menubar::MenuBar};
 
 use super::{
     ATTENTION_HOPS, App, BIN_QUERY, BIN_STATE, Bounce, CHARGING_AGAIN, Entry, HIDE_DELAY_MS,
-    HIDE_TIMER, MAIN_WINDOW, MASCOT_POLL_MS, MASCOT_TIMER, Role, window_of,
+    HIDE_TIMER, MAIN_WINDOW, MASCOT_POLL_MS, MASCOT_TIMER, RUNNING_LAUNCH_HOPS, Role, window_of,
 };
 
 pub(super) fn app_has_attention(
@@ -277,10 +277,20 @@ impl App {
 
     /// `until: None` is the bounce of an app being opened, which the user can
     /// turn off; a request for attention always bounces.
+    ///
+    /// An app that already runs without windows, in the notification area,
+    /// may open none (Rainmeter shows its window only from its tray icon,
+    /// issue #59): it bounces twice, not until the limit, as if it hung.
     pub(super) fn start_bounce(&mut self, id: String, until: Option<f32>) {
         if until.is_none() && !self.config.bounce_on_open {
             return;
         }
+        if self.bounces.contains_key(&id) {
+            return;
+        }
+        let until = until.or_else(|| {
+            tracker::is_running(&id).then_some(RUNNING_LAUNCH_HOPS * bounce::HOP_SECONDS)
+        });
         self.bounces.entry(id).or_insert(Bounce {
             start: Instant::now(),
             until,
