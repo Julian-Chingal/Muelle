@@ -8,6 +8,8 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ## [Unreleased]
 
+## [0.1.23]
+
 ### English
 
 - Frosted glass now adapts to Windows' light/dark shell palette, with a lighter
@@ -28,53 +30,10 @@ copia la sección de la versión que se publica a la release de GitHub.
   for the menu bar" in Settings → Appearance and pick one for the menu bar and
   its panels, independently of the dock. By default it still shares the
   dock's theme, and existing settings are unchanged.
-
-### Español
-
-- El cristal esmerilado sigue el modo claro/oscuro de Windows, con menos tinte
-  para dejar ver el fondo y paneles legibles (#60). Los materiales ya no fuerzan
-  Ajustes a claro u oscuro; las opciones Claro/Oscuro explícitas se conservan.
-  Se respetan las políticas de transparencia y energía de Windows.
-- Ajustes ofrece 20 fondos en cuatro columnas masonry. Solo las miniaturas van
-  incluidas; los originales se descargan de GitHub al elegirlos, se verifican y
-  quedan disponibles sin conexión. Abrir la galería no descarga originales y un
-  fallo de descarga conserva el fondo actual.
-- Cambiar el fondo desde Ajustes ahora avisa directamente al Dock y renueva el
-  cristal existente sin esperar un cambio de tema. Las notificaciones del fondo
-  y de DWM conservan las previsualizaciones y controles abiertos si el tema no
-  cambia; los eventos repetidos se agrupan sin consultas periódicas.
-  La galería usa el ajuste persistente del escritorio y su notificación nativa
-  para reducir el intervalo en que el cristal muestra la imagen anterior.
-- La barra superior puede tener su propio tema (issue #54): desactiva "Mismo
-  tema para la barra superior" en Ajustes → Apariencia y elige uno para la
-  barra y sus paneles, independiente del dock. Por defecto sigue usando el
-  tema del dock, y los ajustes existentes no cambian.
-
-## [0.1.22]
-
-### English
-
 - Release now scans the final Dock, Settings and installer bytes with Microsoft
   Defender before creating updater metadata or a draft release, and retains
   hashes, signature details and scan evidence. Detections and incomplete scans
   stop publication; runtime app behavior is unchanged.
-- Added Simplified Chinese, Hindi, Arabic, Bengali and Portuguese to Settings,
-  Dock menus and menu-bar panels. Language now uses a dropdown with native
-  language names and an Automatic option that follows Windows. Arabic Settings
-  use a right-to-left layout; native labels respect their text's reading direction.
-  The website's Settings preview now offers the same languages and RTL layout.
-- Added an offline wallpaper gallery to Appearance with 12 desktop backgrounds.
-  Selecting an image applies it through Windows; opening the gallery leaves the
-  current background untouched. Small lazy-loaded previews, serialized background
-  work and embedded originals keep the gallery independent of network access.
-- Intelligent hiding now measures only the visible part of the active window:
-  its invisible resize borders reaching into the Dock no longer hide it.
-- The Genie minimize animation now defaults to Fast (0.35 s). Saved speed
-  choices remain unchanged.
-- Fixed the "Show hidden icons" tooltip appearing over the desktop after closing
-  a full-screen app or the last window (issue #48). Windows gave the focus to
-  the hidden taskbar; the dock now hands it to the window in front, or to the
-  desktop. The menu bar's hidden-icons button keeps working.
 - Fixed the menu bar's "^" button starting the first hidden tray app right
   after opening the panel (issue #52). It now opens it with Space instead of
   Enter, whose key-up reached the panel's first icon, and sends no key unless
@@ -104,6 +63,85 @@ copia la sección de la versión que se publica a la release de GitHub.
   #59) now bounces its icon twice instead of up to 10 s: such apps may open no
   window when started again. One process lookup per click, only for apps
   without windows.
+
+### Español
+
+- El cristal esmerilado sigue el modo claro/oscuro de Windows, con menos tinte
+  para dejar ver el fondo y paneles legibles (#60). Los materiales ya no fuerzan
+  Ajustes a claro u oscuro; las opciones Claro/Oscuro explícitas se conservan.
+  Se respetan las políticas de transparencia y energía de Windows.
+- Ajustes ofrece 20 fondos en cuatro columnas masonry. Solo las miniaturas van
+  incluidas; los originales se descargan de GitHub al elegirlos, se verifican y
+  quedan disponibles sin conexión. Abrir la galería no descarga originales y un
+  fallo de descarga conserva el fondo actual.
+- Cambiar el fondo desde Ajustes ahora avisa directamente al Dock y renueva el
+  cristal existente sin esperar un cambio de tema. Las notificaciones del fondo
+  y de DWM conservan las previsualizaciones y controles abiertos si el tema no
+  cambia; los eventos repetidos se agrupan sin consultas periódicas.
+  La galería usa el ajuste persistente del escritorio y su notificación nativa
+  para reducir el intervalo en que el cristal muestra la imagen anterior.
+- La barra superior puede tener su propio tema (issue #54): desactiva "Mismo
+  tema para la barra superior" en Ajustes → Apariencia y elige uno para la
+  barra y sus paneles, independiente del dock. Por defecto sigue usando el
+  tema del dock, y los ajustes existentes no cambian.
+- Release analiza los binarios finales del Dock, Ajustes y el instalador con
+  Microsoft Defender antes de crear el manifiesto del actualizador o el borrador,
+  conservando hashes, firmas y el resultado. Las detecciones o análisis fallidos
+  detienen la publicación; no cambia el funcionamiento de la app.
+- Corregido el botón «^» de la barra superior, que abría el primer icono oculto
+  de la bandeja justo después de mostrar el panel (issue #52). Ahora lo abre
+  con Espacio en vez de Enter, cuya tecla al soltarse llegaba al primer icono
+  del panel, y no envía ninguna tecla si la barra de tareas no recibió el foco.
+- Las ventanas ya no se abren ni se quedan con la barra de título bajo la barra
+  superior (issue #53): la que pasa al frente, o se suelta tras arrastrarla, con
+  su borde superior bajo la barra visible baja justo debajo, como en macOS. Los
+  popups de Firefox con `window.open()` se abrían arriba del todo y perdían el
+  botón de cerrar. No se tocan las ventanas maximizadas, a pantalla completa ni
+  sin bordes, ni nada mientras la barra se oculta sola. Por eventos, sin sondeos.
+- Las listas largas de las carpetas del Dock vuelven a poder desplazarse (issue
+  #56). Windows las dejaba crecer hasta ocupar toda la pantalla, donde el Dock y
+  la barra superior tapaban sus flechas de desplazamiento; ahora cada lista cabe
+  entre ambos, así que las dos flechas se ven y la desplazan al pasar el ratón,
+  como en cualquier menú de Windows.
+- Monitor del sistema opcional en la barra superior (issue #64), en Ajustes >
+  Barra superior: CPU y memoria sobre la velocidad de subida y bajada, en dos
+  columnas pequeñas a la izquierda de los iconos de estado; al hacer clic abre
+  el Administrador de tareas. Desactivado por defecto. Activado, hace tres
+  consultas baratas al sistema cada 2 s y solo con la barra en pantalla: nada
+  mientras está oculta, se oculta sola o hay una app a pantalla completa.
+- La visibilidad de la barra superior es ahora una sola elección, como la del
+  Dock (issue #61): Siempre visible, Automática o la nueva Inteligente, que
+  muestra la barra salvo cuando la ventana activa llega debajo de ella; mientras
+  tanto, el borde superior la muestra. Inteligente no reserva franja de
+  pantalla, así que las ventanas maximizadas usan toda la altura. Se conservan
+  las elecciones guardadas; usa los eventos de ventana que el dock ya sigue,
+  sin sondeos.
+- Abrir una app que ya está en marcha en el área de notificaciones (Rainmeter,
+  issue #59) hace rebotar su icono dos veces en vez de hasta 10 s: estas apps
+  pueden no abrir ninguna ventana al iniciarlas de nuevo. Una consulta de
+  procesos por clic, solo para apps sin ventanas.
+
+## [0.1.22]
+
+### English
+
+- Added Simplified Chinese, Hindi, Arabic, Bengali and Portuguese to Settings,
+  Dock menus and menu-bar panels. Language now uses a dropdown with native
+  language names and an Automatic option that follows Windows. Arabic Settings
+  use a right-to-left layout; native labels respect their text's reading direction.
+  The website's Settings preview now offers the same languages and RTL layout.
+- Added an offline wallpaper gallery to Appearance with 12 desktop backgrounds.
+  Selecting an image applies it through Windows; opening the gallery leaves the
+  current background untouched. Small lazy-loaded previews, serialized background
+  work and embedded originals keep the gallery independent of network access.
+- Intelligent hiding now measures only the visible part of the active window:
+  its invisible resize borders reaching into the Dock no longer hide it.
+- The Genie minimize animation now defaults to Fast (0.35 s). Saved speed
+  choices remain unchanged.
+- Fixed the "Show hidden icons" tooltip appearing over the desktop after closing
+  a full-screen app or the last window (issue #48). Windows gave the focus to
+  the hidden taskbar; the dock now hands it to the window in front, or to the
+  desktop. The menu bar's hidden-icons button keeps working.
 - Window previews always have their close button, and icons always bounce when
   an app asks for attention: both Settings switches were removed and their
   saved values are ignored.
@@ -140,10 +178,6 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### Español
 
-- Release analiza los binarios finales del Dock, Ajustes y el instalador con
-  Microsoft Defender antes de crear el manifiesto del actualizador o el borrador,
-  conservando hashes, firmas y el resultado. Las detecciones o análisis fallidos
-  detienen la publicación; no cambia el funcionamiento de la app.
 - Añadidos chino simplificado, hindi, árabe, bengalí y portugués en Ajustes,
   menús del Dock y paneles de la barra superior. El idioma se elige en un
   desplegable con nombres nativos y Automático para seguir Windows. Ajustes
@@ -163,38 +197,6 @@ copia la sección de la versión que se publica a la release de GitHub.
   daba el foco a la barra de tareas oculta; ahora el dock lo pasa a la ventana
   del frente o al escritorio. El botón de iconos ocultos de la barra superior
   sigue funcionando.
-- Corregido el botón «^» de la barra superior, que abría el primer icono oculto
-  de la bandeja justo después de mostrar el panel (issue #52). Ahora lo abre
-  con Espacio en vez de Enter, cuya tecla al soltarse llegaba al primer icono
-  del panel, y no envía ninguna tecla si la barra de tareas no recibió el foco.
-- Las ventanas ya no se abren ni se quedan con la barra de título bajo la barra
-  superior (issue #53): la que pasa al frente, o se suelta tras arrastrarla, con
-  su borde superior bajo la barra visible baja justo debajo, como en macOS. Los
-  popups de Firefox con `window.open()` se abrían arriba del todo y perdían el
-  botón de cerrar. No se tocan las ventanas maximizadas, a pantalla completa ni
-  sin bordes, ni nada mientras la barra se oculta sola. Por eventos, sin sondeos.
-- Las listas largas de las carpetas del Dock vuelven a poder desplazarse (issue
-  #56). Windows las dejaba crecer hasta ocupar toda la pantalla, donde el Dock y
-  la barra superior tapaban sus flechas de desplazamiento; ahora cada lista cabe
-  entre ambos, así que las dos flechas se ven y la desplazan al pasar el ratón,
-  como en cualquier menú de Windows.
-- Monitor del sistema opcional en la barra superior (issue #64), en Ajustes >
-  Barra superior: CPU y memoria sobre la velocidad de subida y bajada, en dos
-  columnas pequeñas a la izquierda de los iconos de estado; al hacer clic abre
-  el Administrador de tareas. Desactivado por defecto. Activado, hace tres
-  consultas baratas al sistema cada 2 s y solo con la barra en pantalla: nada
-  mientras está oculta, se oculta sola o hay una app a pantalla completa.
-- La visibilidad de la barra superior es ahora una sola elección, como la del
-  Dock (issue #61): Siempre visible, Automática o la nueva Inteligente, que
-  muestra la barra salvo cuando la ventana activa llega debajo de ella; mientras
-  tanto, el borde superior la muestra. Inteligente no reserva franja de
-  pantalla, así que las ventanas maximizadas usan toda la altura. Se conservan
-  las elecciones guardadas; usa los eventos de ventana que el dock ya sigue,
-  sin sondeos.
-- Abrir una app que ya está en marcha en el área de notificaciones (Rainmeter,
-  issue #59) hace rebotar su icono dos veces en vez de hasta 10 s: estas apps
-  pueden no abrir ninguna ventana al iniciarlas de nuevo. Una consulta de
-  procesos por clic, solo para apps sin ventanas.
 - Las previsualizaciones de ventanas siempre tienen su botón de cerrar y los
   iconos siempre rebotan cuando una app pide atención: se quitaron ambos
   interruptores de Ajustes y se ignoran sus valores guardados.
