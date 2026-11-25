@@ -71,7 +71,8 @@ fn main() {
             _ => None,
         };
         if let Some(place) = exact {
-            let mut crab = mascot::Mascot::play(&gfx, act, place, 1.25).expect("play");
+            let mut crab = mascot::Mascot::play(&gfx, mascot::Character::Crab, act, place, 1.25)
+                .expect("play");
             let mut msg = MSG::default();
             while !crab.finished() {
                 while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
@@ -107,7 +108,8 @@ fn main() {
                 },
             ),
         };
-        let mut crab = mascot::Mascot::play(&gfx, act, place, 1.25).expect("play");
+        let mut crab =
+            mascot::Mascot::play(&gfx, mascot::Character::Crab, act, place, 1.25).expect("play");
         let start = Instant::now();
         let marks = [0.15, 0.35, 0.7, 1.2, 1.8, 2.4, 3.1, 4.2];
         let mut next = 0;
