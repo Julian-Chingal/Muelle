@@ -204,8 +204,8 @@ mod tests {
         };
         assert_eq!(welcome(&seen, "2026-11-25", "0.1.23"), None);
         assert_eq!(welcome(&seen, "2026-11-26", "0.1.23"), Some(Act::Greeting));
-        assert_eq!(welcome(&seen, "2026-11-25", "0.1.24"), Some(Act::Updated));
-        assert_eq!(welcome(&seen, "2026-11-26", "0.1.24"), Some(Act::Updated));
+        assert_eq!(welcome(&seen, "2026-11-25", "0.1.25"), Some(Act::Updated));
+        assert_eq!(welcome(&seen, "2026-11-26", "0.1.25"), Some(Act::Updated));
     }
 
     #[test]
