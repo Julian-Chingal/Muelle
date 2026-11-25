@@ -127,14 +127,15 @@ pub(super) fn query_bin_in_background() {
 }
 
 impl App {
-    /// The crab plays `act` (see `mascot`), unless it is out already, it is
+    /// The mascot plays `act` (see `mascot`), unless it is out already, it is
     /// turned off, or something runs full screen.
     pub(super) fn perform(&mut self, act: mascot::Act, place: mascot::Place) {
         if !self.can_perform() {
             return;
         }
         let scale = self.stage.as_ref().map_or(1.0, |stage| stage.scale);
-        let Some(mascot) = mascot::Mascot::play(&self.gfx, act, place, scale) else {
+        let character = self.config.mascot_character;
+        let Some(mascot) = mascot::Mascot::play(&self.gfx, character, act, place, scale) else {
             return;
         };
         self.mascot = Some(mascot);

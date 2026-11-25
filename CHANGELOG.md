@@ -59,6 +59,13 @@ copia la sección de la versión que se publica a la release de GitHub.
   Intelligent reserves no strip of the screen, so maximized windows use the
   full height. Existing choices are kept; it reuses the window events the dock
   already follows, with no polling.
+- Five more mascots: a tabby cat, a red fox, a capybara, a mochi (a white blob
+  whose mitten hands move with its mood) and a chibi girl with a bun, whose
+  hands also follow her mood, in pixel art, each with the same
+  five faces and acts as Claude's crab (happy, love, sad with a tear, asleep,
+  walking along the Dock). Choose one under Settings > Dock, each previewed
+  from the dock's own sprites over a backdrop of its world; Claude's crab stays
+  the default.
 - Opening an app that already runs in the notification area (Rainmeter, issue
   #59) now bounces its icon twice instead of up to 10 s: such apps may open no
   window when started again. One process lookup per click, only for apps
@@ -116,6 +123,13 @@ copia la sección de la versión que se publica a la release de GitHub.
   pantalla, así que las ventanas maximizadas usan toda la altura. Se conservan
   las elecciones guardadas; usa los eventos de ventana que el dock ya sigue,
   sin sondeos.
+- Cinco mascotas más: un gato atigrado, un zorro, un capibara, un mochi (una
+  bolita blanca que mueve las manos según su ánimo) y una chica chibi con moño,
+  cuyas manos también siguen su ánimo, en pixel art, cada uno con
+  las mismas cinco caras y actuaciones que el cangrejo de Claude (feliz, enamorado,
+  triste con una lágrima, dormido, caminando por el Dock). Se eligen en Ajustes
+  > Dock, cada una dibujada con los mismos sprites del dock sobre un fondo de su
+  mundo; el cangrejo de Claude sigue siendo la predeterminada.
 - Abrir una app que ya está en marcha en el área de notificaciones (Rainmeter,
   issue #59) hace rebotar su icono dos veces en vez de hasta 10 s: estas apps
   pueden no abrir ninguna ventana al iniciarlas de nuevo. Una consulta de

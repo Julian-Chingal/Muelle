@@ -537,6 +537,18 @@ input:focus-visible {
 .preview-dock i:nth-child(4) { background: #70bfa4; }
 .preview-dock i:nth-child(5) { background: #d68093; }
 .preview-screen-island { height: 82px; }
+/* The mascot on the rim of a small dock, at the same cell size for both. */
+.preview-screen-mascot { height: 96px; }
+/* Each mascot over its own world, light in both themes like an illustration:
+   the crab's beach, the cat's cosy room, the fox's forest, the capybara's hot
+   spring, the mochi's soft lavender and the girl's cherry blossom. */
+.preview-screen-mascot[data-character="crab"] { background: linear-gradient(180deg, #9fd6ee 0%, #cdebf5 52%, #f4e1b8 53%, #e8cc95 100%); }
+.preview-screen-mascot[data-character="cat"] { background: radial-gradient(circle at 50% 40%, #fff3e6 0%, #ffd9c7 60%, #f7b9a6 100%); }
+.preview-screen-mascot[data-character="fox"] { background: linear-gradient(180deg, #e3f1d2 0%, #b5d9a4 55%, #7fb07a 100%); }
+.preview-screen-mascot[data-character="capybara"] { background: linear-gradient(180deg, #eef8f3 0%, #c4e8dc 55%, #8fcfbf 100%); }
+.preview-screen-mascot[data-character="girl"] { background: radial-gradient(circle at 50% 35%, #fff6fa 0%, #fbd9e9 55%, #f1b2cf 100%); }
+.preview-screen-mascot[data-character="mochi"] { background: radial-gradient(circle at 50% 35%, #fbf9ff 0%, #e2dbfb 55%, #c3b5f0 100%); }
+.preview-mascot { position: absolute; left: 50%; top: 50%; width: auto; transform: translate(-50%, -50%); filter: drop-shadow(0 2px 2px #0002); }
 .preview-screen-island .preview-window { left: 29%; top: 43%; width: 42%; height: 39%; opacity: .72; }
 .preview-island { position: absolute; top: 0; color: #15171b; filter: drop-shadow(0 1px 1px #0002); }
 .preview-island[data-style="notch"] { left: 50%; transform: translateX(-50%); width: 88px; height: 22px; }

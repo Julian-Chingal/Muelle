@@ -350,6 +350,29 @@ test("reset selects the new intelligent default without changing pinned apps", a
   } finally { unmount(); }
 });
 
+test("the mascot is Claude's crab unless the cat is chosen, and only while it is on", async () => {
+  const picker = (view) => [...elements(view.body())].find((node) =>
+    node.props.label === texts.en.mascotCharacter && "value" in node.props);
+  const off = fixture("dock", { mascot: false, mascotCharacter: undefined });
+  const unmountOff = await off.mount();
+  try {
+    // Folded away (inert) while the mascot is off.
+    const folded = [...elements(off.body())].find((node) =>
+      node.props.label === texts.en.mascotCharacter && "open" in node.props);
+    assert.equal(folded.props.open, false);
+  } finally { unmountOff(); }
+  const view = fixture("dock", { mascot: true, mascotCharacter: undefined });
+  const unmount = await view.mount();
+  try {
+    assert.equal(picker(view).props.value, "crab");
+    assert.deepEqual(picker(view).props.options.map((option) => option.value), ["crab", "cat", "fox", "capybara", "mochi", "girl"]);
+    view.change(texts.en.mascotCharacter, "cat");
+    view.fire(60);
+    await settle();
+    assert.deepEqual(view.calls, [{ mascotCharacter: "cat" }]);
+  } finally { unmount(); }
+});
+
 test("menu bar visibility is one choice of three, like the dock's", async () => {
   const view = fixture("menubar");
   const unmount = await view.mount();

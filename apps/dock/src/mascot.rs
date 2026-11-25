@@ -1,6 +1,8 @@
-//! The crab: a pixel-art mascot that comes out only for moments worth it
-//! (an AI plan resetting or running out, the charger plugged in or out, energy
-//! saver starting) and plays a short act, then leaves.
+//! The mascot: Claude's crab, a tabby cat, a fox, a capybara, a mochi or a
+//! chibi girl, in pixel art, that comes out
+//! only for moments worth it (an AI plan resetting or running out, the
+//! charger plugged in or out, energy saver starting) and plays a short act,
+//! then leaves. Both play the same acts with the same faces.
 //!
 //! Cost: nothing while it is away. An act creates a small click-through
 //! window, hands the whole choreography to the compositor as keyframe
@@ -12,6 +14,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+pub use muelle_config::MascotCharacter as Character;
 use muelle_core::frame::DockEdge;
 use muelle_shell::icons::IconImage;
 use windows::{
@@ -51,6 +54,40 @@ fn color(cell: u8) -> Option<[u8; 3]> {
         b'r' => [236, 72, 72],
         b'R' => [255, 150, 150],
         b'z' => [235, 238, 245],
+        // The cat: tabby orange, its stripes, cream, inner ears, highlight
+        // and the light bands of its tail.
+        b'O' => [246, 170, 78],
+        b'S' => [228, 132, 46],
+        b'c' => [255, 241, 222],
+        b'n' => [242, 138, 150],
+        b'w' => [255, 255, 255],
+        b't' => [255, 216, 160],
+        // The fox: red-orange, its shade, the inside of its ears and its
+        // dark legs.
+        b'F' => [238, 112, 38],
+        b'f' => [212, 86, 24],
+        b'y' => [255, 222, 186],
+        b'L' => [110, 52, 34],
+        // The capybara: tan fur, its shade, its muzzle, the inside of its
+        // ears and its legs.
+        b'A' => [226, 150, 86],
+        b'a' => [208, 128, 70],
+        b'M' => [160, 94, 58],
+        b'u' => [204, 120, 86],
+        b'U' => [140, 82, 54],
+        // The mochi: white, and the lavender of its lower half.
+        b'W' => [246, 245, 252],
+        b'V' => [229, 226, 250],
+        b'v' => [206, 199, 240],
+        // The girl: her hair and its sheen, skin and its shade, her eyes,
+        // the lavender trim of her shirt and her hair tie.
+        b'H' => [58, 36, 64],
+        b'I' => [150, 104, 150],
+        b'K' => [255, 228, 210],
+        b'J' => [247, 202, 182],
+        b'X' => [88, 62, 110],
+        b'P' => [156, 118, 220],
+        b'Q' => [186, 160, 240],
         _ => return None,
     })
 }
@@ -86,6 +123,745 @@ const LEGS: [[&str; 3]; 2] = [
         ".......kkkk....kkkk...",
     ],
 ];
+
+/// A cell drawn over a sprite: row, column and color.
+type Mark = (usize, usize, u8);
+/// Rows drawn over a sprite from (row, column): `.` leaves a cell as it
+/// is, a space clears it.
+type Patch = (usize, usize, &'static [&'static str]);
+
+/// The cat and the fox are 26 cells wide and drawn as the left half of each
+/// row (columns 0 to 11), mirrored onto the right, so they are symmetric by
+/// construction; what is not (a tail, a highlight) is patched on top.
+const PET_WIDTH: usize = 26;
+/// Column `c` of a left half mirrors to column `PET_MIRROR - c`.
+const PET_MIRROR: usize = 23;
+
+struct Pet {
+    /// Each row's left half, mirrored onto the right; or, for a mascot that
+    /// is not symmetric, the whole row (`PET_WIDTH` long), drawn as it is.
+    half: &'static [&'static str],
+    patches: &'static [Patch],
+    /// Mid-step: a front paw lifted.
+    step: &'static [Patch],
+    /// For each face: cells mirrored onto both sides (eyes, cheeks), then
+    /// cells drawn as they are (mouth, tear).
+    face: fn(Face) -> (&'static [Mark], &'static [Mark]),
+    /// Patches that change with the face and the step, as the mochi's
+    /// hands; drawn after `patches` and `step`.
+    pose: fn(Face, bool) -> &'static [Patch],
+}
+
+/// No pose of its own: the same body for every face.
+fn still(_: Face, _: bool) -> &'static [Patch] {
+    &[]
+}
+
+impl Pet {
+    /// Without a face, standing or mid-step.
+    fn body(&self, face: Face, step: bool) -> Vec<Vec<u8>> {
+        let mut grid: Vec<Vec<u8>> = self
+            .half
+            .iter()
+            .map(|half| {
+                if half.len() == PET_WIDTH {
+                    return half.as_bytes().to_vec();
+                }
+                let mut row = vec![b'.'; PET_WIDTH];
+                for (column, &cell) in half.as_bytes().iter().enumerate() {
+                    row[column] = cell;
+                    row[PET_MIRROR - column] = cell;
+                }
+                row
+            })
+            .collect();
+        let pose = (self.pose)(face, step);
+        let step: &[Patch] = if step { self.step } else { &[] };
+        for &(top, left, rows) in self.patches.iter().chain(step).chain(pose) {
+            for (y, row) in rows.iter().enumerate() {
+                for (x, &cell) in row.as_bytes().iter().enumerate() {
+                    match cell {
+                        b'.' => {}
+                        b' ' => grid[top + y][left + x] = b'.',
+                        cell => grid[top + y][left + x] = cell,
+                    }
+                }
+            }
+        }
+        grid
+    }
+
+    /// The face's cells, the mirrored ones on both sides.
+    fn marks(&self, face: Face) -> Vec<Mark> {
+        let (both, as_is) = (self.face)(face);
+        both.iter()
+            .flat_map(|&(row, column, cell)| {
+                [(row, column, cell), (row, PET_MIRROR - column, cell)]
+            })
+            .chain(as_is.iter().copied())
+            .collect()
+    }
+
+    fn grid(&self, face: Face, step: bool) -> Vec<Vec<u8>> {
+        let mut grid = self.body(face, step);
+        for (row, column, cell) in self.marks(face) {
+            grid[row][column] = cell;
+        }
+        grid
+    }
+}
+
+/// A tabby cat, sitting, its tail curled up on the right.
+const CAT: Pet = Pet {
+    half: &[
+        ".....kk.....",
+        "....kOnk....",
+        "....kOnnkkkk",
+        "...kOOnOSOSO",
+        "..kOOOOOSOSO",
+        "..kOOOOOOOOO",
+        "..kOOOcccccc",
+        "..kOOccccccc",
+        "..kOcccccccc",
+        "kkkOcccccccc",
+        "..kOcccccccc",
+        "kkkOcccccccc",
+        "..kOcccccccc",
+        "..kOOccccccc",
+        "..kOOccccccc",
+        "...kOOcccccc",
+        "...kOOkccckc",
+        "...kkkkccckk",
+        "......kkkk..",
+    ],
+    patches: &[
+        // The highlight on its forehead.
+        (4, 4, &["ww", "w."]),
+        // The tail.
+        (
+            12,
+            21,
+            &["..kk.", ".kOtk", ".ktOk", ".kOOk", "OOOk.", "kkk.."],
+        ),
+    ],
+    step: &[(17, 6, &["kkkk", "    "])],
+    face: cat_face,
+    pose: still,
+};
+
+/// A red fox, sitting up, its bushy tail on the right.
+const FOX: Pet = Pet {
+    half: &[
+        "..kk........",
+        "..kykk......",
+        "..kyyFk.....",
+        "..kyyyFkkkkk",
+        "..kyyFFFFFFF",
+        "..kyFFFFFFFF",
+        ".kFFFFFFFFFF",
+        "kFFFFFFFFFFF",
+        "kcFFFFFFFFFF",
+        ".kccFFFFFFFc",
+        "kccccFFFFccc",
+        ".kcccccccccc",
+        "....kFcccccc",
+        "....kFFccccc",
+        "....kFFccccc",
+        "....kFFFcccc",
+        "...kFFFFcccc",
+        "...kFFFFcccc",
+        "...kFFFFLLcc",
+        "...kFFFFLLcc",
+        "...kFFFFLLcc",
+        "...kkkkkkkkk",
+    ],
+    patches: &[(
+        12,
+        18,
+        &[
+            ".....kk.", "....kwwk", "...kwwwk", "..kFwwck", "..kFFcck", ".kFFFFfk", "kFFFFFfk",
+            "kFFFFffk", "kFFFFfk.", "kkkkkk..",
+        ],
+    )],
+    step: &[(20, 8, &["kk", "  "])],
+    face: fox_face,
+    pose: still,
+};
+
+/// A capybara, a round loaf seen three-quarters: its muzzle and far eye
+/// to the right, so its faces are not mirrored.
+const CAPYBARA: Pet = Pet {
+    half: &[
+        "......kk....",
+        ".....kuuk...",
+        "....kkuAkkkk",
+        "...kAAAAAAAA",
+        "..kAAAAAAAAA",
+        "..kAAAAAAAAA",
+        ".kAAAAAAAAAA",
+        ".kAAAAAAAAAA",
+        ".kAAAAAAAAAA",
+        ".kAAAAAAAAAA",
+        ".kAAAAAAAAAA",
+        ".kAAAAAAAAAA",
+        ".kAaaaaaaaaa",
+        ".kAAAAAAAAAA",
+        "kAAAAAAAAAAA",
+        "kAAAAAAAAAAA",
+        "kAAAAAAAAAAA",
+        "kAAAAAUUAAAA",
+        "kAAAAUUUUAAA",
+        ".kAAAUUUUAAA",
+        "..kkkkkkkkkk",
+    ],
+    patches: &[
+        (4, 5, &["hh"]),
+        // The muzzle.
+        (
+            5,
+            13,
+            &[
+                "..MMMM..", ".MMMMMM.", "MMMMMMMM", "MMMMMMMM", "MMMMMMMM", ".MMMMMM.", "..MMMM..",
+            ],
+        ),
+    ],
+    // The near front leg lifted, inside the round body.
+    step: &[(16, 5, &[".UU.", "UUUU", "UUUU", "AAAA"])],
+    face: capybara_face,
+    pose: still,
+};
+
+/// A mochi: a soft white blob with mitten hands, which it raises when happy
+/// and brings to its mouth when curious.
+const MOCHI: Pet = Pet {
+    half: &[
+        "......kkkkkk",
+        "....kkWWWWWW",
+        "...kWWWWWWWW",
+        "..kWWWWWWWWW",
+        "..kWWWWWWWWW",
+        "..kWWWWWWWWW",
+        "..kWWWWWWWWW",
+        "..kWWWWWWWWW",
+        "..kWWWWWWWWW",
+        "..kWWWWWWWWW",
+        "..kVWWWWWWWW",
+        "..kVVWWWWWWW",
+        "..kVVVVVVVVV",
+        "...kvvvvvvvv",
+        "....kkkkkkkk",
+    ],
+    // Its highlight, on the left only.
+    patches: &[(2, 5, &["ww"]), (3, 4, &["w"])],
+    // It has no paws: its hands move instead (`mochi_pose`).
+    step: &[],
+    face: mochi_face,
+    pose: mochi_pose,
+};
+
+const MOCHI_HAND: &[&str] = &[".kkk.", "kWWWk", "kWWWk", "kVVVk", ".kkk."];
+
+/// Its hands: low at its sides, raised when happy, one at its mouth when
+/// curious; mid-step, the left one a row higher.
+fn mochi_pose(face: Face, step: bool) -> &'static [Patch] {
+    match (face, step) {
+        (Face::Happy, false) => &[(6, 0, MOCHI_HAND), (6, 19, MOCHI_HAND)],
+        (Face::Happy, true) => &[(5, 0, MOCHI_HAND), (6, 19, MOCHI_HAND)],
+        (Face::Neutral, false) => &[(10, 7, MOCHI_HAND)],
+        (Face::Neutral, true) => &[(9, 7, MOCHI_HAND)],
+        (_, false) => &[(10, 0, MOCHI_HAND), (10, 19, MOCHI_HAND)],
+        (_, true) => &[(9, 0, MOCHI_HAND), (10, 19, MOCHI_HAND)],
+    }
+}
+
+fn mochi_face(face: Face) -> (&'static [Mark], &'static [Mark]) {
+    match face {
+        // Round dot eyes.
+        Face::Neutral => (
+            &[(7, 8, b'e'), (7, 9, b'e'), (8, 8, b'e'), (8, 9, b'e')],
+            &[],
+        ),
+        Face::Happy => (
+            &[(8, 6, b'e'), (7, 7, b'e'), (7, 8, b'e'), (8, 9, b'e')],
+            &[],
+        ),
+        // Tall eyes and blushing.
+        Face::Love => (
+            &[(6, 8, b'e'), (7, 8, b'e'), (9, 6, b'p'), (9, 7, b'p')],
+            &[],
+        ),
+        Face::Sad => (
+            &[(7, 6, b'e'), (8, 7, b'e'), (8, 8, b'e'), (7, 9, b'e')],
+            &[(9, 15, b'b'), (10, 15, b'b')],
+        ),
+        Face::Sleep => (&[(8, 6, b'e'), (8, 7, b'e'), (8, 8, b'e')], &[]),
+    }
+}
+
+/// A chibi girl with her hair in a bun tied with a lavender band, in a
+/// white shirt; her hands rest on the dock, rise to her cheeks or her chin
+/// with her mood. She is not symmetric, so her rows are whole.
+const GIRL: Pet = Pet {
+    half: &[
+        "..kkHHkk..kkkkk...........",
+        ".kHHHHHHkkHHHHHkkk........",
+        ".kHHIIHHHHHHHHHHHHk.......",
+        "kHHHHIHHHHHHHHIHHHHk......",
+        ".kHHHHHHHHHHIIHHHHHHk.....",
+        ".kHHHHHHQQHIHHHHHHHHHk....",
+        "kQQHHHHQQHHHHHHHHHHHHHk...",
+        ".kQPQQPHHHHHHHHHHHHHHHk...",
+        ".kHHQQHHHHHHHHHHHHHHHHHk..",
+        ".kHHHHHHHHHHHHHHHHHHHHHk..",
+        ".kHHHHHHKHKHKKHKHKHHHHHk..",
+        ".kHHHHHKKKKKKKKKKKKHHHHHk.",
+        ".kHHHHHKKKKKKKKKKKKHHHHHk.",
+        ".kHHHHKKKKKKKKKKKKKJHHHHk.",
+        ".kHHHKKKKKKKKKKKKKKJHHHHk.",
+        ".kHHHJKKKKKKKKKKKKKJHHHHk.",
+        ".kHHHHKKKKKKKKKKKKKHHHHHk.",
+        ".kHHHHkKKKKKKKKKKKkkHHHHk.",
+        "..kHHk.kkJJJJJJJkk..kHHk..",
+        "...kk.kkWWPWWWWPWWkk.kk...",
+        ".....kWWWPWWWWWWPWWWk.....",
+        ".....kWWWPWWWWWWPWWWk.....",
+        ".....kWWWPWWWWWWPWWWk.....",
+        ".....kVVVVVVVVVVVVVVk.....",
+        "......kkkkkkkkkkkkkk......",
+    ],
+    patches: &[],
+    // She has no paws: her hands move instead (`girl_pose`).
+    step: &[],
+    face: girl_face,
+    pose: girl_pose,
+};
+
+const GIRL_FIST: &[&str] = &[".kkk.", "kKKKk", "kKJKk", ".kkk."];
+const GIRL_PALM: &[&str] = &[".kk.", "kKKk", "kKJk", ".kk."];
+
+/// Her hands: resting on the dock, raised in fists when happy, under her
+/// cheeks when in love, one at her chin when worried; mid-step, the left
+/// one a row higher.
+fn girl_pose(face: Face, step: bool) -> &'static [Patch] {
+    match (face, step) {
+        (Face::Happy, false) => &[(18, 5, GIRL_FIST), (18, 16, GIRL_FIST)],
+        (Face::Happy, true) => &[(17, 5, GIRL_FIST), (18, 16, GIRL_FIST)],
+        (Face::Love, false) => &[(16, 5, GIRL_PALM), (16, 17, GIRL_PALM)],
+        (Face::Love, true) => &[(15, 5, GIRL_PALM), (16, 17, GIRL_PALM)],
+        (Face::Sad, false) => &[(16, 15, GIRL_FIST)],
+        (Face::Sad, true) => &[(15, 15, GIRL_FIST)],
+        (_, false) => &[(20, 7, GIRL_FIST), (20, 14, GIRL_FIST)],
+        (_, true) => &[(19, 7, GIRL_FIST), (20, 14, GIRL_FIST)],
+    }
+}
+
+fn girl_face(face: Face) -> (&'static [Mark], &'static [Mark]) {
+    // Nothing mirrored: drawn where it goes.
+    const NEUTRAL: [Mark; 20] = [
+        // Big eyes, with a highlight.
+        (12, 8, b'w'),
+        (12, 9, b'e'),
+        (13, 8, b'X'),
+        (13, 9, b'e'),
+        (14, 8, b'e'),
+        (14, 9, b'e'),
+        (12, 16, b'w'),
+        (12, 17, b'e'),
+        (13, 16, b'X'),
+        (13, 17, b'e'),
+        (14, 16, b'e'),
+        (14, 17, b'e'),
+        (15, 6, b'p'),
+        (15, 7, b'p'),
+        (15, 18, b'p'),
+        (15, 19, b'p'),
+        (16, 11, b'e'),
+        (17, 12, b'e'),
+        (17, 13, b'e'),
+        (16, 14, b'e'),
+    ];
+    // Eyes closed in arcs, laughing.
+    const HAPPY: [Mark; 22] = [
+        (13, 8, b'e'),
+        (12, 9, b'e'),
+        (12, 10, b'e'),
+        (13, 11, b'e'),
+        (13, 14, b'e'),
+        (12, 15, b'e'),
+        (12, 16, b'e'),
+        (13, 17, b'e'),
+        (15, 6, b'p'),
+        (15, 7, b'p'),
+        (15, 18, b'p'),
+        (15, 19, b'p'),
+        (15, 11, b'e'),
+        (15, 12, b'e'),
+        (15, 13, b'e'),
+        (15, 14, b'e'),
+        (16, 11, b'e'),
+        (16, 12, b'm'),
+        (16, 13, b'm'),
+        (16, 14, b'e'),
+        (17, 12, b'e'),
+        (17, 13, b'e'),
+    ];
+    // Eyes closed, blushing, a soft smile.
+    const LOVE: [Mark; 18] = [
+        (13, 8, b'e'),
+        (12, 9, b'e'),
+        (12, 10, b'e'),
+        (13, 11, b'e'),
+        (13, 14, b'e'),
+        (12, 15, b'e'),
+        (12, 16, b'e'),
+        (13, 17, b'e'),
+        (14, 8, b'p'),
+        (14, 9, b'p'),
+        (15, 8, b'p'),
+        (14, 16, b'p'),
+        (14, 17, b'p'),
+        (15, 17, b'p'),
+        (16, 11, b'e'),
+        (17, 12, b'e'),
+        (17, 13, b'e'),
+        (16, 14, b'e'),
+    ];
+    // Worried brows, looking aside, a bead of sweat.
+    const SAD: [Mark; 16] = [
+        (11, 8, b'e'),
+        (12, 9, b'e'),
+        (13, 8, b'X'),
+        (13, 9, b'e'),
+        (14, 8, b'e'),
+        (14, 9, b'e'),
+        (11, 17, b'e'),
+        (12, 16, b'e'),
+        (13, 16, b'e'),
+        (13, 17, b'X'),
+        (14, 16, b'e'),
+        (14, 17, b'e'),
+        (16, 12, b'e'),
+        (16, 13, b'e'),
+        (13, 19, b'b'),
+        (14, 19, b'b'),
+    ];
+    const SLEEP: [Mark; 14] = [
+        (13, 8, b'e'),
+        (14, 9, b'e'),
+        (14, 10, b'e'),
+        (13, 11, b'e'),
+        (13, 14, b'e'),
+        (14, 15, b'e'),
+        (14, 16, b'e'),
+        (13, 17, b'e'),
+        (15, 6, b'p'),
+        (15, 7, b'p'),
+        (15, 18, b'p'),
+        (15, 19, b'p'),
+        (16, 12, b'm'),
+        (16, 13, b'm'),
+    ];
+    let marks: &'static [Mark] = match face {
+        Face::Neutral => &NEUTRAL,
+        Face::Happy => &HAPPY,
+        Face::Love => &LOVE,
+        Face::Sad => &SAD,
+        Face::Sleep => &SLEEP,
+    };
+    (&[], marks)
+}
+
+/// Rosy cheeks, the cat's always and the fox's when in love.
+const CAT_CHEEK: [Mark; 2] = [(11, 5, b'p'), (11, 6, b'p')];
+/// The cat's "ω" mouth.
+const CAT_OMEGA: [Mark; 6] = [
+    (11, 9, b'e'),
+    (11, 11, b'e'),
+    (11, 12, b'e'),
+    (11, 14, b'e'),
+    (12, 10, b'e'),
+    (12, 13, b'e'),
+];
+/// An open mouth, outlined, with its inside: the cat's, a row below the
+/// fox's (see `FOX_OPEN`).
+const CAT_OPEN: [Mark; 10] = [
+    (11, 10, b'e'),
+    (11, 11, b'e'),
+    (11, 12, b'e'),
+    (11, 13, b'e'),
+    (12, 10, b'e'),
+    (12, 11, b'm'),
+    (12, 12, b'm'),
+    (12, 13, b'e'),
+    (13, 11, b'e'),
+    (13, 12, b'e'),
+];
+
+fn cat_face(face: Face) -> (&'static [Mark], &'static [Mark]) {
+    match face {
+        // Tall eyes and a "ω" mouth.
+        Face::Neutral => (
+            &[
+                (8, 7, b'e'),
+                (9, 7, b'e'),
+                (10, 7, b'e'),
+                CAT_CHEEK[0],
+                CAT_CHEEK[1],
+            ],
+            &CAT_OMEGA,
+        ),
+        // Eyes closed in an arc and an open mouth.
+        Face::Happy => (
+            &[
+                (9, 5, b'e'),
+                (8, 6, b'e'),
+                (8, 7, b'e'),
+                (9, 8, b'e'),
+                CAT_CHEEK[0],
+                CAT_CHEEK[1],
+            ],
+            &CAT_OPEN,
+        ),
+        // "> <" and an open mouth.
+        Face::Love => (
+            &[
+                (8, 6, b'e'),
+                (8, 7, b'e'),
+                (9, 8, b'e'),
+                (10, 6, b'e'),
+                (10, 7, b'e'),
+                CAT_CHEEK[0],
+                CAT_CHEEK[1],
+            ],
+            &CAT_OPEN,
+        ),
+        // Closed eyes, a frown and a tear.
+        Face::Sad => (
+            &[
+                (9, 5, b'e'),
+                (10, 6, b'e'),
+                (10, 7, b'e'),
+                (9, 8, b'e'),
+                CAT_CHEEK[0],
+                CAT_CHEEK[1],
+            ],
+            &[
+                (12, 10, b'e'),
+                (11, 11, b'e'),
+                (11, 12, b'e'),
+                (12, 13, b'e'),
+                (11, 15, b'b'),
+                (12, 15, b'b'),
+            ],
+        ),
+        // Shut eyes and a small round mouth.
+        Face::Sleep => (
+            &[
+                (9, 6, b'e'),
+                (9, 7, b'e'),
+                (9, 8, b'e'),
+                CAT_CHEEK[0],
+                CAT_CHEEK[1],
+            ],
+            &[
+                (11, 11, b'e'),
+                (11, 12, b'e'),
+                (12, 10, b'e'),
+                (12, 11, b'p'),
+                (12, 12, b'p'),
+                (12, 13, b'e'),
+                (13, 11, b'e'),
+                (13, 12, b'e'),
+            ],
+        ),
+    }
+}
+
+/// The fox's nose with a small "w" mouth.
+const FOX_SMILE: [Mark; 6] = [
+    (9, 11, b'e'),
+    (9, 12, b'e'),
+    (10, 10, b'e'),
+    (11, 11, b'e'),
+    (11, 12, b'e'),
+    (10, 13, b'e'),
+];
+/// Its nose and an open mouth.
+const FOX_OPEN: [Mark; 12] = [
+    (9, 11, b'e'),
+    (9, 12, b'e'),
+    (10, 10, b'e'),
+    (10, 11, b'e'),
+    (10, 12, b'e'),
+    (10, 13, b'e'),
+    (11, 10, b'e'),
+    (11, 11, b'm'),
+    (11, 12, b'm'),
+    (11, 13, b'e'),
+    (12, 11, b'e'),
+    (12, 12, b'e'),
+];
+
+fn fox_face(face: Face) -> (&'static [Mark], &'static [Mark]) {
+    match face {
+        Face::Neutral => (&[(6, 7, b'e'), (7, 7, b'e'), (8, 7, b'e')], &FOX_SMILE),
+        Face::Happy => (
+            &[(7, 5, b'e'), (6, 6, b'e'), (6, 7, b'e'), (7, 8, b'e')],
+            &FOX_OPEN,
+        ),
+        Face::Love => (
+            &[
+                (6, 6, b'e'),
+                (6, 7, b'e'),
+                (7, 8, b'e'),
+                (8, 6, b'e'),
+                (8, 7, b'e'),
+                (10, 4, b'p'),
+                (10, 5, b'p'),
+            ],
+            &FOX_OPEN,
+        ),
+        Face::Sad => (
+            &[(7, 5, b'e'), (8, 6, b'e'), (8, 7, b'e'), (7, 8, b'e')],
+            &[
+                (9, 11, b'e'),
+                (9, 12, b'e'),
+                (11, 10, b'e'),
+                (10, 11, b'e'),
+                (10, 12, b'e'),
+                (11, 13, b'e'),
+                (9, 16, b'b'),
+                (10, 16, b'b'),
+            ],
+        ),
+        Face::Sleep => (
+            &[(7, 5, b'e'), (7, 6, b'e'), (7, 7, b'e'), (7, 8, b'e')],
+            &[
+                (9, 11, b'e'),
+                (9, 12, b'e'),
+                (10, 11, b'e'),
+                (10, 12, b'e'),
+                (11, 10, b'e'),
+                (11, 11, b'm'),
+                (11, 12, b'm'),
+                (11, 13, b'e'),
+                (12, 11, b'e'),
+                (12, 12, b'e'),
+            ],
+        ),
+    }
+}
+
+/// The capybara's nostrils, on its muzzle.
+const CAPYBARA_NOSE: [Mark; 2] = [(7, 15, b'e'), (7, 18, b'e')];
+/// Its far eye, a dot at the edge of its head.
+const CAPYBARA_FAR_EYE: Mark = (7, 21, b'e');
+/// Its open mouth under the nostrils.
+const CAPYBARA_OPEN: [Mark; 10] = [
+    (9, 15, b'e'),
+    (9, 16, b'e'),
+    (9, 17, b'e'),
+    (9, 18, b'e'),
+    (10, 15, b'e'),
+    (10, 16, b'm'),
+    (10, 17, b'm'),
+    (10, 18, b'e'),
+    (11, 16, b'e'),
+    (11, 17, b'e'),
+];
+
+fn capybara_face(face: Face) -> (&'static [Mark], &'static [Mark]) {
+    // Nothing mirrored: the near eye is on the left, the muzzle on the right.
+    const NEUTRAL: [Mark; 12] = [
+        CAPYBARA_NOSE[0],
+        CAPYBARA_NOSE[1],
+        CAPYBARA_FAR_EYE,
+        (7, 6, b'e'),
+        (8, 6, b'e'),
+        (9, 6, b'e'),
+        (10, 3, b'p'),
+        (10, 4, b'p'),
+        (9, 15, b'e'),
+        (10, 16, b'e'),
+        (10, 17, b'e'),
+        (9, 18, b'e'),
+    ];
+    const HAPPY: [Mark; 17] = [
+        CAPYBARA_NOSE[0],
+        CAPYBARA_NOSE[1],
+        CAPYBARA_FAR_EYE,
+        (8, 4, b'e'),
+        (7, 5, b'e'),
+        (7, 6, b'e'),
+        (8, 7, b'e'),
+        CAPYBARA_OPEN[0],
+        CAPYBARA_OPEN[1],
+        CAPYBARA_OPEN[2],
+        CAPYBARA_OPEN[3],
+        CAPYBARA_OPEN[4],
+        CAPYBARA_OPEN[5],
+        CAPYBARA_OPEN[6],
+        CAPYBARA_OPEN[7],
+        CAPYBARA_OPEN[8],
+        CAPYBARA_OPEN[9],
+    ];
+    const LOVE: [Mark; 19] = [
+        CAPYBARA_NOSE[0],
+        CAPYBARA_NOSE[1],
+        CAPYBARA_FAR_EYE,
+        (8, 4, b'e'),
+        (7, 5, b'e'),
+        (7, 6, b'e'),
+        (8, 7, b'e'),
+        (10, 3, b'p'),
+        (10, 4, b'p'),
+        CAPYBARA_OPEN[0],
+        CAPYBARA_OPEN[1],
+        CAPYBARA_OPEN[2],
+        CAPYBARA_OPEN[3],
+        CAPYBARA_OPEN[4],
+        CAPYBARA_OPEN[5],
+        CAPYBARA_OPEN[6],
+        CAPYBARA_OPEN[7],
+        CAPYBARA_OPEN[8],
+        CAPYBARA_OPEN[9],
+    ];
+    const SAD: [Mark; 13] = [
+        CAPYBARA_NOSE[0],
+        CAPYBARA_NOSE[1],
+        CAPYBARA_FAR_EYE,
+        (8, 4, b'e'),
+        (9, 5, b'e'),
+        (9, 6, b'e'),
+        (8, 7, b'e'),
+        (10, 6, b'b'),
+        (11, 6, b'b'),
+        (10, 15, b'e'),
+        (9, 16, b'e'),
+        (9, 17, b'e'),
+        (10, 18, b'e'),
+    ];
+    const SLEEP: [Mark; 10] = [
+        CAPYBARA_NOSE[0],
+        CAPYBARA_NOSE[1],
+        (8, 20, b'e'),
+        (8, 21, b'e'),
+        (8, 4, b'e'),
+        (8, 5, b'e'),
+        (8, 6, b'e'),
+        (8, 7, b'e'),
+        (9, 16, b'm'),
+        (9, 17, b'm'),
+    ];
+    let marks: &'static [Mark] = match face {
+        Face::Neutral => &NEUTRAL,
+        Face::Happy => &HAPPY,
+        Face::Love => &LOVE,
+        Face::Sad => &SAD,
+        Face::Sleep => &SLEEP,
+    };
+    (&[], marks)
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Face {
@@ -184,6 +960,33 @@ impl Emote {
                 "....zzzz", "......z.", "zzz..z..", "..z.zzzz", ".z......", "zzz.....",
             ],
         }
+    }
+}
+
+/// The pet drawing of `character`; `None` for the crab, drawn on its own.
+fn pet(character: Character) -> Option<&'static Pet> {
+    match character {
+        Character::Crab => None,
+        Character::Cat => Some(&CAT),
+        Character::Fox => Some(&FOX),
+        Character::Capybara => Some(&CAPYBARA),
+        Character::Mochi => Some(&MOCHI),
+        Character::Girl => Some(&GIRL),
+    }
+}
+
+/// The mascot's size, in cells: columns and rows.
+fn cells(character: Character) -> (usize, usize) {
+    pet(character).map_or((WIDTH, BODY.len() + LEGS[0].len()), |pet| {
+        (PET_WIDTH, pet.half.len())
+    })
+}
+
+/// `character` with `face`, standing or mid-step, `cell` pixels a cell.
+fn pose_image(character: Character, face: Face, step: bool, cell: u32) -> IconImage {
+    match pet(character) {
+        Some(pet) => paint(&pet.grid(face, step), cell),
+        None => crab_image(face, step, cell),
     }
 }
 
@@ -503,23 +1306,31 @@ pub struct Mascot {
 }
 
 impl Mascot {
-    /// Plays `act` at `place`. `scale` is the monitor's (1.0 at 100 %).
-    pub fn play(gfx: &Gfx, act: Act, place: Place, scale: f32) -> Option<Self> {
-        match Self::build(gfx, act, place, scale) {
+    /// `character` plays `act` at `place`. `scale` is the monitor's (1.0 at
+    /// 100 %).
+    pub fn play(
+        gfx: &Gfx,
+        character: Character,
+        act: Act,
+        place: Place,
+        scale: f32,
+    ) -> Option<Self> {
+        match Self::build(gfx, character, act, place, scale) {
             Ok(mascot) => Some(mascot),
             Err(error) => {
-                muelle_shell::log::line(&format!("cangrejo: {error:#}"));
+                muelle_shell::log::line(&format!("mascota: {error:#}"));
                 None
             }
         }
     }
 
-    fn build(gfx: &Gfx, act: Act, place: Place, scale: f32) -> Result<Self> {
+    fn build(gfx: &Gfx, character: Character, act: Act, place: Place, scale: f32) -> Result<Self> {
         let cell_px = (scale * 1.6).round().max(2.0) as u32;
         let cell = cell_px as f32;
+        let (columns, rows) = cells(character);
         let crab = (
-            (WIDTH as u32 * cell_px) as f32,
-            ((BODY.len() + 3) as u32 * cell_px) as f32,
+            (columns as u32 * cell_px) as f32,
+            (rows as u32 * cell_px) as f32,
         );
         // Room above the crab for hops and the emote.
         let headroom = 14.0 * cell;
@@ -602,7 +1413,8 @@ impl Mascot {
                     .cast::<ICompositorDesktopInterop>()?
                     .CreateDesktopWindowTarget(hwnd, true)?
             };
-            let (root, reaction, poke_heart) = choreograph(gfx, &script, crab, crab_top, cell)?;
+            let (root, reaction, poke_heart) =
+                choreograph(gfx, character, &script, crab, crab_top, cell)?;
             if let Some(matrix) = turn.matrix() {
                 root.SetTransformMatrix(matrix)?;
             }
@@ -704,6 +1516,7 @@ impl Drop for Mascot {
 ///          └ poke heart (only on a poke)
 fn choreograph(
     gfx: &Gfx,
+    character: Character,
     script: &Script,
     crab: (f32, f32),
     crab_top: f32,
@@ -811,7 +1624,7 @@ fn choreograph(
     hop.Children()?.InsertAtTop(&reaction)?;
     let poses_layer = reaction.Children()?;
     for pose in &poses {
-        let sprite = sprite(gfx, &crab_image(pose.0, pose.1, cell_px))?;
+        let sprite = sprite(gfx, &pose_image(character, pose.0, pose.1, cell_px))?;
         poses_layer.InsertAtTop(&sprite)?;
         let shown = c.CreateScalarKeyFrameAnimation()?;
         shown.SetDuration(duration)?;
@@ -992,6 +1805,55 @@ mod tests {
     }
 
     #[test]
+    fn pets_are_symmetric_and_their_faces_stay_on_their_faces() {
+        for (name, pet) in [
+            ("cat", &CAT),
+            ("fox", &FOX),
+            ("capybara", &CAPYBARA),
+            ("mochi", &MOCHI),
+            ("girl", &GIRL),
+        ] {
+            for half in pet.half {
+                // Exactly the left half (columns 0 to 11 of 0 to 23), or a
+                // whole row.
+                assert!(
+                    half.len() == PET_MIRROR.div_ceil(2) || half.len() == PET_WIDTH,
+                    "{name}: {half}"
+                );
+            }
+            for face in Face::ALL {
+                let bare = pet.body(face, false);
+                assert!(bare.iter().all(|row| row.len() == PET_WIDTH), "{name}");
+                for (row, column, cell) in pet.marks(face) {
+                    assert!(color(cell).is_some(), "{name} {face:?}");
+                    // On fur, never on the outline or outside it.
+                    assert!(
+                        !matches!(bare[row][column], b'.' | b'k'),
+                        "{name} {face:?} at {row},{column}"
+                    );
+                }
+                for step in [false, true] {
+                    let grid = pet.grid(face, step);
+                    assert!(
+                        grid.iter()
+                            .flatten()
+                            .all(|&cell| cell == b'.' || color(cell).is_some()),
+                        "{name}"
+                    );
+                }
+                // Mid-step, something moves: a paw or a hand.
+                let changed = bare
+                    .iter()
+                    .flatten()
+                    .zip(pet.body(face, true).iter().flatten())
+                    .filter(|(a, b)| a != b)
+                    .count();
+                assert!(changed > 0, "{name} {face:?}");
+            }
+        }
+    }
+
+    #[test]
     fn script_should_place_the_crab_along_its_path() {
         let script = Script::new(Act::Charging, 1000.0, 44.0);
         assert_eq!(script.x_at(0.0), 0.0);
@@ -1024,9 +1886,19 @@ mod tests {
             Act::Unplugged,
             Act::Sleepy,
         ] {
-            let script = Script::new(act, 800.0, 44.0);
-            let (_root, reaction, heart) = choreograph(&gfx, &script, (44.0, 30.0), 28.0, 2.0)?;
-            react(&gfx, &reaction, &heart, 2.0, 28.0)?;
+            for character in [
+                Character::Crab,
+                Character::Cat,
+                Character::Fox,
+                Character::Capybara,
+                Character::Mochi,
+                Character::Girl,
+            ] {
+                let script = Script::new(act, 800.0, 44.0);
+                let (_root, reaction, heart) =
+                    choreograph(&gfx, character, &script, (44.0, 30.0), 28.0, 2.0)?;
+                react(&gfx, &reaction, &heart, 2.0, 28.0)?;
+            }
         }
         Ok(())
     }

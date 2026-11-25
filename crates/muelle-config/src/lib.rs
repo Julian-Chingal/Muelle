@@ -122,9 +122,12 @@ pub struct Config {
     pub show_recents: bool,
     /// Icons bounce while the app they open is starting.
     pub bounce_on_open: bool,
-    /// The crab comes out for moments worth it (an AI plan resetting or
+    /// The mascot comes out for moments worth it (an AI plan resetting or
     /// running out, the charger, energy saver).
     pub mascot: bool,
+    /// Which one: Claude's crab by default, the cat, the fox, the capybara,
+    /// the mochi or the girl.
+    pub mascot_character: MascotCharacter,
     /// Settings asks GitHub Releases for a newer version when it opens. The
     /// only network access in Muelle, so it can be turned off.
     pub check_updates: bool,
@@ -171,6 +174,22 @@ pub enum DockPosition {
     #[default]
     #[serde(other)]
     Bottom,
+}
+
+/// Which mascot comes out for the moments worth it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MascotCharacter {
+    Cat,
+    Fox,
+    Capybara,
+    Mochi,
+    Girl,
+    /// Claude's crab. Also what an unknown value from a newer version reads
+    /// as (serde needs the fallback variant last).
+    #[default]
+    #[serde(other)]
+    Crab,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -368,6 +387,7 @@ impl Default for Config {
             show_recents: true,
             bounce_on_open: true,
             mascot: true,
+            mascot_character: MascotCharacter::Crab,
             check_updates: true,
             auto_update: true,
             language: Language::Auto,
@@ -920,6 +940,28 @@ mod tests {
         assert!(older.menu_bar_auto_hide && !older.menu_bar_smart_hide);
         let chosen: Config = serde_json::from_str(r#"{"menuBarSmartHide":true}"#)?;
         assert!(chosen.menu_bar_smart_hide);
+        Ok(())
+    }
+
+    #[test]
+    fn the_crab_is_the_mascot_unless_the_cat_is_chosen() -> Result<(), serde_json::Error> {
+        assert_eq!(Config::default().mascot_character, MascotCharacter::Crab);
+        let older: Config = serde_json::from_str("{}")?;
+        assert_eq!(older.mascot_character, MascotCharacter::Crab);
+        let cat: Config = serde_json::from_str(r#"{"mascotCharacter":"cat"}"#)?;
+        assert_eq!(cat.mascot_character, MascotCharacter::Cat);
+        let fox: Config = serde_json::from_str(r#"{"mascotCharacter":"fox"}"#)?;
+        assert_eq!(fox.mascot_character, MascotCharacter::Fox);
+        let capybara: Config = serde_json::from_str(r#"{"mascotCharacter":"capybara"}"#)?;
+        assert_eq!(capybara.mascot_character, MascotCharacter::Capybara);
+        let mochi: Config = serde_json::from_str(r#"{"mascotCharacter":"mochi"}"#)?;
+        assert_eq!(mochi.mascot_character, MascotCharacter::Mochi);
+        let girl: Config = serde_json::from_str(r#"{"mascotCharacter":"girl"}"#)?;
+        assert_eq!(girl.mascot_character, MascotCharacter::Girl);
+        // A mascot added by a newer version falls back to the crab.
+        let newer: Config = serde_json::from_str(r#"{"mascotCharacter":"owl"}"#)?;
+        assert_eq!(newer.mascot_character, MascotCharacter::Crab);
+        assert_eq!(serde_json::to_value(MascotCharacter::Cat)?, "cat");
         Ok(())
     }
 

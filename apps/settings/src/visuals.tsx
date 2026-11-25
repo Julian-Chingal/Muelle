@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
-import type { Appearance, DockDensity, DockPosition, GenieSpeed, IslandStyle } from "./config";
+import type { Appearance, DockDensity, DockPosition, GenieSpeed, IslandStyle, MascotCharacter } from "./config";
+import { MASCOT_PALETTE, MASCOT_SPRITES } from "./mascots";
 
 const PATHS = {
   size: <><rect x="3" y="9" width="6" height="6" rx="1.5" /><rect x="13" y="5" width="9" height="14" rx="2" /></>,
@@ -76,6 +77,32 @@ export function ThemePreview({ appearance, wallpaper }: { appearance: Appearance
       : appearance === "frosted"
       ? <><ThemeLayer theme="frosted" wallpaper={wallpaper} /><ThemeLayer theme="frosted" wallpaper={wallpaper} half dark /></>
       : <ThemeLayer theme={appearance} wallpaper={wallpaper} />}
+  </span>;
+}
+
+/** Preview pixels per sprite cell: every mascot at the same scale, as in the dock. */
+const MASCOT_CELL = 2.8;
+
+/** The dock's own mascot sprite, cell for cell, over a backdrop of its own world. */
+export function MascotPreview({ character }: { character: MascotCharacter }) {
+  const rows = MASCOT_SPRITES[character];
+  const width = rows[0].length;
+  // One rect per run of equal cells keeps the SVG small.
+  const runs: { x: number; y: number; length: number; fill: string }[] = [];
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length;) {
+      let end = x + 1;
+      while (end < row.length && row[end] === row[x]) end += 1;
+      const fill = MASCOT_PALETTE[row[x]];
+      if (fill) runs.push({ x, y, length: end - x, fill });
+      x = end;
+    }
+  });
+  return <span className="preview-screen preview-screen-mascot" data-character={character}>
+    <svg className="preview-mascot" viewBox={`0 0 ${width} ${rows.length}`} shapeRendering="crispEdges"
+      style={{ height: `${rows.length * MASCOT_CELL}px` }}>
+      {runs.map((run) => <rect key={`${run.x}-${run.y}`} x={run.x} y={run.y} width={run.length} height={1} fill={run.fill} />)}
+    </svg>
   </span>;
 }
 

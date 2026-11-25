@@ -10,6 +10,7 @@ import {
   type DockAutoHideSpeed,
   type DockHidingMode,
   type GenieSpeed,
+  type MascotCharacter,
   type IslandStyle,
   type Language,
   type UpdateInfo,
@@ -32,7 +33,7 @@ import {
   setAutostart,
 } from "./config";
 import { Card, Row, Segmented, Select, Slider, SubRow, Toggle, VisualChoices } from "./controls";
-import { DockDensityPreview, DockPreview, IslandPreview, SettingIcon, SpeedPreview, ThemePreview } from "./visuals";
+import { DockDensityPreview, DockPreview, IslandPreview, MascotPreview, SettingIcon, SpeedPreview, ThemePreview } from "./visuals";
 import { type SectionId, SectionIcon } from "./icons";
 import { UpdateBanner } from "./UpdateBanner";
 import { WallpaperGallery } from "./WallpaperGallery";
@@ -120,7 +121,7 @@ export function App() {
     const readWindowsPreferences = () => {
       loadWindowsPreferences()
         .then((values) => { if (alive) setWindowsPreferences(values); })
-        .catch(() => {});
+        .catch(() => { });
     };
     const refreshOnFocus = async () => {
       const read = ++focusRead;
@@ -134,7 +135,7 @@ export function App() {
         setConfig(loaded);
       }
     };
-    const onFocus = () => { void refreshOnFocus().catch(() => {}); };
+    const onFocus = () => { void refreshOnFocus().catch(() => { }); };
     readWindowsPreferences();
     window.addEventListener("focus", onFocus);
     Promise.all([loadConfig(), getAutostart()])
@@ -154,7 +155,7 @@ export function App() {
       .catch(() => alive && setFailed(true));
     getVersion()
       .then((current) => alive && setVersion(current))
-      .catch(() => {});
+      .catch(() => { });
     const progress = listen<ProgressEvent>("update-progress", ({ payload }) => {
       const share = payload.total ? Math.min(payload.downloaded / payload.total, 1) : null;
       setUpdateState((state) => (state.kind === "installing" ? { ...state, progress: share } : state));
@@ -182,8 +183,8 @@ export function App() {
       window.removeEventListener("focus", onFocus);
       window.clearTimeout(timer.current);
       window.clearTimeout(resetTimer.current);
-      progress.then((unlisten) => unlisten()).catch(() => {});
-      close.then((unlisten) => unlisten()).catch(() => {});
+      progress.then((unlisten) => unlisten()).catch(() => { });
+      close.then((unlisten) => unlisten()).catch(() => { });
     };
   }, [flushSettings]);
 
@@ -223,7 +224,7 @@ export function App() {
   }, []);
 
   const showNotes = useCallback((info: UpdateInfo) => {
-    if (info.notes) openReleaseNotes(info.notes).catch(() => {});
+    if (info.notes) openReleaseNotes(info.notes).catch(() => { });
   }, []);
 
   const showProject = useCallback(() => {
@@ -249,7 +250,7 @@ export function App() {
 
   const appearance = config?.appearance ?? "auto";
   useEffect(() => {
-    getCurrentWindow().setTheme(windowTheme(appearance)).catch(() => {});
+    getCurrentWindow().setTheme(windowTheme(appearance)).catch(() => { });
   }, [appearance]);
 
   if (!config) return <div className="window" />;
@@ -450,20 +451,6 @@ export function App() {
                   />
                 </SubRow>
               </Card>
-              <Card title={t.dockItems}>
-                <Row label={t.showStart}>
-                  <Toggle label={t.showStart} checked={config.showStart ?? true} onChange={(showStart) => update({ showStart })} />
-                </Row>
-                <Row label={t.pinExplorer} hint={t.pinExplorerHint}>
-                  <Toggle label={t.pinExplorer} checked={config.pinExplorer ?? true} onChange={(pinExplorer) => update({ pinExplorer })} />
-                </Row>
-                <Row label={t.showDownloads}>
-                  <Toggle label={t.showDownloads} checked={config.showDownloads ?? true} onChange={(showDownloads) => update({ showDownloads })} />
-                </Row>
-                <Row label={t.showTrash}>
-                  <Toggle label={t.showTrash} checked={config.showTrash ?? true} onChange={(showTrash) => update({ showTrash })} />
-                </Row>
-              </Card>
               <Card title={t.groupBehavior}>
                 <Row label={t.dockHidingMode} hint={config.autoHide ? t.dockHidingAutomaticHint : config.smartHide ? t.dockHidingIntelligentHint : t.dockHidingVisibleHint}>
                   <Select<DockHidingMode>
@@ -506,6 +493,23 @@ export function App() {
                     onChange={(mascot) => update({ mascot })}
                   />
                 </Row>
+                <SubRow label={t.mascotCharacter} stacked open={config.mascot}>
+                  <VisualChoices<MascotCharacter>
+                    label={t.mascotCharacter}
+                    hideLabel
+                    columns={3}
+                    value={config.mascotCharacter ?? "crab"}
+                    options={[
+                      { value: "crab", label: t.mascotCrab, preview: <MascotPreview character="crab" /> },
+                      { value: "cat", label: t.mascotCat, preview: <MascotPreview character="cat" /> },
+                      { value: "fox", label: t.mascotFox, preview: <MascotPreview character="fox" /> },
+                      { value: "capybara", label: t.mascotCapybara, preview: <MascotPreview character="capybara" /> },
+                      { value: "mochi", label: t.mascotMochi, preview: <MascotPreview character="mochi" /> },
+                      { value: "girl", label: t.mascotGirl, preview: <MascotPreview character="girl" /> },
+                    ]}
+                    onChange={(mascotCharacter) => update({ mascotCharacter })}
+                  />
+                </SubRow>
                 <Row icon={<SettingIcon name="indicators" />} label={t.showIndicators}>
                   <Toggle
                     label={t.showIndicators}
@@ -526,6 +530,20 @@ export function App() {
                     checked={config.jumpLists}
                     onChange={(jumpLists) => update({ jumpLists })}
                   />
+                </Row>
+              </Card>
+              <Card title={t.dockItems}>
+                <Row label={t.showStart}>
+                  <Toggle label={t.showStart} checked={config.showStart ?? true} onChange={(showStart) => update({ showStart })} />
+                </Row>
+                <Row label={t.pinExplorer} hint={t.pinExplorerHint}>
+                  <Toggle label={t.pinExplorer} checked={config.pinExplorer ?? true} onChange={(pinExplorer) => update({ pinExplorer })} />
+                </Row>
+                <Row label={t.showDownloads}>
+                  <Toggle label={t.showDownloads} checked={config.showDownloads ?? true} onChange={(showDownloads) => update({ showDownloads })} />
+                </Row>
+                <Row label={t.showTrash}>
+                  <Toggle label={t.showTrash} checked={config.showTrash ?? true} onChange={(showTrash) => update({ showTrash })} />
                 </Row>
               </Card>
               <Card>

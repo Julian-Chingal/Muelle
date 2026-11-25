@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export type Language = "auto" | "es" | "en" | "fr" | "zh" | "hi" | "ar" | "bn" | "pt";
 export type IslandStyle = "notch" | "bubble";
 export type GenieSpeed = "normal" | "fast" | "faster";
+export type MascotCharacter = "crab" | "cat" | "fox" | "capybara" | "mochi" | "girl";
 export type DockPosition = "left" | "bottom" | "right";
 export type DockDensity = "compact" | "normal" | "spacious";
 export type DockAutoHideSpeed = "smooth" | "normal" | "fast";
@@ -50,6 +51,7 @@ export interface Config {
   bounceOnOpen: boolean;
   notificationBadges: boolean;
   mascot: boolean;
+  mascotCharacter?: MascotCharacter;
   checkUpdates: boolean;
   autoUpdate: boolean;
   language: Language;
