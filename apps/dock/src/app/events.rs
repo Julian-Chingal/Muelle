@@ -18,7 +18,7 @@ use windows::Win32::{
             SetTimer, WM_CAPTURECHANGED, WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED,
             WM_DWMCOLORIZATIONCOLORCHANGED, WM_INITMENUPOPUP, WM_LBUTTONDOWN, WM_LBUTTONUP,
             WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_RBUTTONUP,
-            WM_SETTINGCHANGE, WM_THEMECHANGED, WM_TIMER,
+            WM_SETTINGCHANGE, WM_THEMECHANGED, WM_TIMER, WM_WTSSESSION_CHANGE, WTS_SESSION_UNLOCK,
         },
     },
 };
@@ -27,14 +27,15 @@ use crate::{edge_watch, folder_menu, multi_window_view::MultiWindowAction};
 
 use super::{
     APPBAR_CALLBACK, ASSETS_DELAY_MS, ASSETS_READY, ASSETS_TIMER, App, BIN_CHANGED, BIN_DELAY_MS,
-    BIN_STATE, BIN_TIMER, CONFIG_CHANGED, DRAG_CANCELLED, DRAG_TIMER, DROP_RUN, EDGE_TIMER,
-    FULLSCREEN_TIMER, HEALTH_CHECK, HIDE_TIMER, HSHELL_FLASH, HSHELL_LANGUAGE, HSHELL_REDRAW,
-    HSHELL_RUDEAPPACTIVATED, HSHELL_WINDOWACTIVATED, HSHELL_WINDOWDESTROYED, LAST_FRONT,
-    MASCOT_TIMER, Outside, PBT_APMPOWERSTATUSCHANGE, PBT_APMRESUMEAUTOMATIC,
+    BIN_STATE, BIN_TIMER, BREAK_TIMER, CONFIG_CHANGED, DRAG_CANCELLED, DRAG_TIMER, DROP_RUN,
+    EDGE_TIMER, FULLSCREEN_TIMER, HEALTH_CHECK, HIDE_TIMER, HSHELL_FLASH, HSHELL_LANGUAGE,
+    HSHELL_REDRAW, HSHELL_RUDEAPPACTIVATED, HSHELL_WINDOWACTIVATED, HSHELL_WINDOWDESTROYED,
+    LAST_FRONT, MASCOT_TIMER, Outside, PBT_APMPOWERSTATUSCHANGE, PBT_APMRESUMEAUTOMATIC,
     PBT_POWERSETTINGCHANGE, PINS_CHANGED, PINS_DELAY_MS, PINS_TIMER, PREVIEW_TIMER,
     REFRESH_DELAY_MS, REFRESH_TIMER, SHELL_HOOK, SPI_SETWORKAREA, SPRING_TIMER, SWITCHER_TIMER,
     SYNC_DELAY_MS, SYNC_TIMER, TASKBAR_CREATED, TASKBAR_DELAY_MS, TASKBAR_PREFS_CHANGED,
-    TASKBAR_TAKEN, TASKBAR_TIMER, TRIM_TIMER, UPDATE_TIMER, WM_MOUSELEAVE, WM_POWERBROADCAST,
+    TASKBAR_TAKEN, TASKBAR_TIMER, TRIM_TIMER, UPDATE_TIMER, WELCOME_TIMER, WM_MOUSELEAVE,
+    WM_POWERBROADCAST,
     feedback::query_bin_in_background,
     lifecycle::{is_tracked, main_window},
     with_app, with_app_then,
@@ -579,7 +580,16 @@ pub(super) unsafe extern "system" fn wndproc(
         WM_TIMER if w.0 == SPRING_TIMER => {
             with_app_then("arrastre sobre una app", App::spring_open);
         }
-        WM_TIMER if w.0 == MASCOT_TIMER => with_app("cangrejo", App::mascot_tick),
+        WM_TIMER if w.0 == MASCOT_TIMER => with_app("mascota", App::mascot_tick),
+        WM_TIMER if w.0 == WELCOME_TIMER => with_app("bienvenida", App::welcome),
+        WM_TIMER if w.0 == BREAK_TIMER => with_app("descanso", App::break_tick),
+        // Unlocked: maybe the first time today (see `App::welcome`).
+        WM_WTSSESSION_CHANGE if w.0 == WTS_SESSION_UNLOCK as usize => {
+            with_app("desbloqueo", |app| {
+                app.arm_welcome();
+                Ok(())
+            });
+        }
         edge_watch::CHANGED => with_app("borde de pantalla", App::edge_changed),
         WM_TIMER if w.0 == EDGE_TIMER => with_app("mostrar al llegar al borde", App::edge_rested),
         WM_TIMER if w.0 == PREVIEW_TIMER => with_app("selector de ventanas", App::preview_tick),
@@ -628,6 +638,9 @@ pub(super) unsafe extern "system" fn wndproc(
         WM_POWERBROADCAST if w.0 == PBT_APMRESUMEAUTOMATIC => {
             with_app("reanudar reserva de espacio", |app| {
                 app.taskbar_attempts = 0;
+                // Asleep was a pause; awake may be the first time today.
+                app.moments.rested();
+                app.arm_welcome();
                 Ok(())
             });
             // SAFETY: `hwnd` is this live window on its owning UI thread.

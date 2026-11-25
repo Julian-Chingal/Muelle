@@ -21,6 +21,10 @@ use windows::{
             Console::{CTRL_C_EVENT, SetConsoleCtrlHandler},
             LibraryLoader::GetModuleHandleW,
             Ole::{IDropTarget, OleInitialize, OleUninitialize, RegisterDragDrop, RevokeDragDrop},
+            RemoteDesktop::{
+                NOTIFY_FOR_THIS_SESSION, WTSRegisterSessionNotification,
+                WTSUnRegisterSessionNotification,
+            },
             WinRT::Composition::ICompositorDesktopInterop,
         },
         UI::{
@@ -277,6 +281,8 @@ pub fn run() -> Result<()> {
             // the queue starts, without playing a startup charging/saver act.
             power_seen: None,
             charging_shown: None,
+            moments: crate::moments::Moments::default(),
+            welcome_tries: 0,
             cursor: 0.0,
             amount: Spring::at(0.0, HOVER_OMEGA),
             last_frame: Instant::now(),
@@ -377,6 +383,11 @@ pub fn run() -> Result<()> {
         DROP_WINDOW.store(input.0 as isize, Ordering::Relaxed);
 
         app.schedule_update();
+        app.sync_break_timer();
+        // The day's greeting, or a new version's celebration; and again
+        // after an unlock (see `on_session_change`).
+        app.arm_welcome();
+        let _ = WTSRegisterSessionNotification(input, NOTIFY_FOR_THIS_SESSION);
         APP.set(Some(app));
     }
 
@@ -395,6 +406,8 @@ pub fn run() -> Result<()> {
     // SAFETY: The drop target was registered on this window in this thread.
     unsafe {
         let _ = RevokeDragDrop(HWND(DROP_WINDOW.load(Ordering::Relaxed) as *mut _));
+        let _ =
+            WTSUnRegisterSessionNotification(HWND(DROP_WINDOW.load(Ordering::Relaxed) as *mut _));
         for hook in [
             &MINIMIZE_HOOK,
             &CLOAK_HOOK,

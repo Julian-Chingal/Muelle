@@ -366,10 +366,15 @@ test("the mascot is Claude's crab unless the cat is chosen, and only while it is
   try {
     assert.equal(picker(view).props.value, "crab");
     assert.deepEqual(picker(view).props.options.map((option) => option.value), ["crab", "cat", "fox", "capybara", "mochi", "girl"]);
+    // The break reminder is off unless chosen.
+    const reminder = [...elements(view.body())].find((node) =>
+      node.props.label === texts.en.mascotBreak && "checked" in node.props);
+    assert.equal(reminder.props.checked, false);
     view.change(texts.en.mascotCharacter, "cat");
+    view.change(texts.en.mascotBreak, true);
     view.fire(60);
     await settle();
-    assert.deepEqual(view.calls, [{ mascotCharacter: "cat" }]);
+    assert.deepEqual(view.calls, [{ mascotCharacter: "cat", mascotBreakReminder: true }]);
   } finally { unmount(); }
 });
 
@@ -488,7 +493,7 @@ test("returning to Settings reflects dock removals without overwriting local edi
 });
 
 test("the theme picker offers every theme with a preview, saves only the choice and themes Settings", async () => {
-  const themes = ["auto", "light", "dark", "frosted", "clear", "aurora"];
+  const themes = ["auto", "light", "dark", "frosted", "clear", "liquidGlass"];
   for (const language of Object.keys(texts)) {
     const view = fixture("appearance", { language });
     const picker = [...elements(view.body())].find((node) => node.props.label === texts[language].theme);
@@ -512,7 +517,7 @@ test("the theme picker offers every theme with a preview, saves only the choice 
 });
 
 test("material presets follow the Windows app theme instead of forcing Settings light or dark", async () => {
-  for (const appearance of ["auto", "frosted", "clear", "aurora", "light", "dark"]) {
+  for (const appearance of ["auto", "frosted", "clear", "liquidGlass", "light", "dark"]) {
     const view = fixture("appearance", { appearance });
     const unmount = await view.mount();
     try {
@@ -533,26 +538,45 @@ test("the frosted preview explains its adaptive palette without adding another p
   assert.match(html, /data-half=""/);
 });
 
+test("Liquid Glass replaces Aurora and previews both palettes for the dock and menu bar", async () => {
+  const view = fixture("appearance");
+  const picker = [...elements(view.body())].find((node) => node.props.label === texts.en.theme);
+  assert.ok(!picker.props.options.some((option) => option.value === "aurora"));
+  const liquid = picker.props.options.find((option) => option.value === "liquidGlass");
+  assert.equal(liquid.detail, texts.en.themeAutoDetail);
+  const html = renderToStaticMarkup(liquid.preview);
+  assert.equal((html.match(/data-theme="liquidGlass"/g) ?? []).length, 2);
+  assert.match(html, /data-dark=""/);
+  const unmount = await view.mount();
+  try {
+    view.change(texts.en.theme, "liquidGlass");
+    view.fire(60);
+    await settle();
+    assert.deepEqual(view.calls, [{ appearance: "liquidGlass" }]);
+    assert.ok(view.themes.every((theme) => theme === null));
+  } finally { unmount(); }
+});
+
 test("the menu bar shares the dock theme until given its own, which saves on its own key", async () => {
   for (const language of Object.keys(texts)) {
-    const view = fixture("appearance", { language, appearance: "aurora", menuBarAppearance: undefined });
+    const view = fixture("appearance", { language, appearance: "liquidGlass", menuBarAppearance: undefined });
     const nodes = [...elements(view.body())];
     const same = nodes.find((node) => node.props.label === texts[language].menuBarThemeSame && "checked" in node.props);
     assert.equal(same.props.checked, true);
     const second = nodes.find((node) => node.props.label === texts[language].menuBarTheme && node.props.options);
-    assert.equal(second.props.value, "aurora", "the closed picker shows the dock's theme");
+    assert.equal(second.props.value, "liquidGlass", "the closed picker shows the dock's theme");
     const row = nodes.find((node) => node.props.label === texts[language].menuBarTheme && "open" in node.props);
     assert.equal(row.props.open, false);
   }
 
-  const view = fixture("appearance", { appearance: "aurora", menuBarAppearance: null });
+  const view = fixture("appearance", { appearance: "liquidGlass", menuBarAppearance: null });
   const unmount = await view.mount();
   try {
     view.change(texts.en.menuBarThemeSame, false);
     view.fire(60);
     await settle();
     // Starts from the dock's theme: nothing changes until another is picked.
-    assert.deepEqual(view.calls, [{ menuBarAppearance: "aurora" }]);
+    assert.deepEqual(view.calls, [{ menuBarAppearance: "liquidGlass" }]);
     const nodes = [...elements(view.body())];
     assert.ok(nodes.find((node) => node.props.label === texts.en.themeDock && node.props.options));
     assert.equal(nodes.find((node) => node.props.label === texts.en.menuBarTheme && "open" in node.props).props.open, true);

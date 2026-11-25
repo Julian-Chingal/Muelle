@@ -271,7 +271,7 @@ export function App() {
   const themeChoices = THEMES.map((theme) => ({
     value: theme,
     label: themeName(t, theme),
-    detail: theme === "auto" || theme === "frosted" ? t.themeAutoDetail : undefined,
+    detail: theme === "auto" || theme === "frosted" || theme === "liquidGlass" ? t.themeAutoDetail : undefined,
     preview: <ThemePreview appearance={theme} wallpaper={wallpaper} />,
   }));
   const appWindow = getCurrentWindow();
@@ -508,6 +508,13 @@ export function App() {
                       { value: "girl", label: t.mascotGirl, preview: <MascotPreview character="girl" /> },
                     ]}
                     onChange={(mascotCharacter) => update({ mascotCharacter })}
+                  />
+                </SubRow>
+                <SubRow label={t.mascotBreak} hint={t.mascotBreakHint} open={config.mascot}>
+                  <Toggle
+                    label={t.mascotBreak}
+                    checked={config.mascotBreakReminder ?? false}
+                    onChange={(mascotBreakReminder) => update({ mascotBreakReminder })}
                   />
                 </SubRow>
                 <Row icon={<SettingIcon name="indicators" />} label={t.showIndicators}>
@@ -793,7 +800,7 @@ function updateHint(t: Texts, state: UpdateState, version: string): string {
 
 const SECTIONS: readonly SectionId[] = ["appearance", "dock", "windows", "menubar", "system"];
 
-const THEMES: readonly Appearance[] = ["auto", "light", "dark", "frosted", "clear", "aurora"];
+const THEMES: readonly Appearance[] = ["auto", "light", "dark", "frosted", "clear", "liquidGlass"];
 
 function themeName(t: Texts, theme: Appearance): string {
   switch (theme) {
@@ -807,8 +814,8 @@ function themeName(t: Texts, theme: Appearance): string {
       return t.themeFrosted;
     case "clear":
       return t.themeClear;
-    case "aurora":
-      return t.themeAurora;
+    case "liquidGlass":
+      return t.themeLiquidGlass;
   }
 }
 

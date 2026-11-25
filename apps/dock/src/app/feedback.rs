@@ -15,11 +15,13 @@ use windows::Win32::{
     UI::WindowsAndMessaging::{GetCursorPos, KillTimer, PostMessageW, SetTimer},
 };
 
-use crate::{mascot, menubar::MenuBar};
+use crate::{mascot, menubar::MenuBar, moments};
 
 use super::{
-    ATTENTION_HOPS, App, BIN_QUERY, BIN_STATE, Bounce, CHARGING_AGAIN, Entry, HIDE_DELAY_MS,
-    HIDE_TIMER, MAIN_WINDOW, MASCOT_POLL_MS, MASCOT_TIMER, RUNNING_LAUNCH_HOPS, Role, window_of,
+    ATTENTION_HOPS, App, BIN_QUERY, BIN_STATE, BREAK_CHECK_MS, BREAK_TIMER, Bounce, CHARGING_AGAIN,
+    Entry, HIDE_DELAY_MS, HIDE_TIMER, MAIN_WINDOW, MASCOT_POLL_MS, MASCOT_TIMER,
+    RUNNING_LAUNCH_HOPS, Role, WELCOME_DELAY_MS, WELCOME_RETRY_MS, WELCOME_TIMER, WELCOME_TRIES,
+    window_of,
 };
 
 pub(super) fn app_has_attention(
@@ -184,23 +186,52 @@ impl App {
     /// does when something asks for attention.
     pub(super) fn dock_edge(&self) -> Option<mascot::Place> {
         let stage = self.stage.as_ref()?;
-        let margin = (stage.icon / 2.0) as i32;
-        let frame = stage.frame;
+        let margin = stage.icon / 2.0;
+        self.rim(-margin, stage.layout.width + margin)
+    }
+
+    /// The rim over the icon `id`, for an act on it (the recycle bin).
+    pub(super) fn rim_over(&self, id: &str) -> Option<mascot::Place> {
+        let stage = self.stage.as_ref()?;
+        let index = self
+            .entries
+            .iter()
+            .position(|entry| entry.id.as_deref() == Some(id))?;
+        let icon = stage.layout.slots.get(index)?.rect;
+        // Room for the mascot, centred on the icon.
+        let room = stage.icon * 1.5;
+        self.rim(icon.x - room, icon.x + icon.width + room)
+    }
+
+    /// The dock's inner rim from `from` to `to` along it, in dock pixels.
+    fn rim(&self, from: f32, to: f32) -> Option<mascot::Place> {
+        let frame = self.stage.as_ref()?.frame;
         // The rim is the dock's side away from the screen edge (dock
-        // coordinate across = 0), and the walk runs the dock's length.
-        let start = frame.point(0.0, 0.0);
-        let end = frame.point(stage.layout.width, 0.0);
+        // coordinate across = 0), and the walk runs along the dock.
+        let start = frame.point(from, 0.0);
+        let end = frame.point(to, 0.0);
         let (from, to, rim) = if frame.edge.is_vertical() {
             (start.1, end.1, start.0)
         } else {
             (start.0, end.0, start.1)
         };
         Some(mascot::Place::Along {
-            left: from as i32 - margin,
-            right: to as i32 + margin,
+            left: from as i32,
+            right: to as i32,
             top: rim as i32,
             edge: frame.edge,
         })
+    }
+
+    /// Under a point of the menu bar, or on the dock when the bar does not
+    /// show: for the battery's and the network's moments.
+    fn under_or_dock(&self, point: Option<POINT>) -> Option<mascot::Place> {
+        point
+            .map(|point| mascot::Place::Under {
+                x: point.x,
+                top: point.y,
+            })
+            .or_else(|| self.dock_edge())
     }
 
     pub(super) fn mascot_tick(&mut self) -> Result<()> {
@@ -226,14 +257,21 @@ impl App {
     /// out under that provider.
     pub(super) fn take_bar_cue(&mut self) {
         let cue = self.menubar.as_mut().and_then(MenuBar::take_cue);
-        if let Some((act, point)) = cue {
-            self.perform(
-                act,
-                mascot::Place::Under {
-                    x: point.x,
-                    top: point.y,
-                },
-            );
+        let Some((act, point)) = cue else {
+            return;
+        };
+        // An AI plan's moment belongs under its figure in the island; the
+        // network's comes to the dock when the bar does not show.
+        let place = if matches!(act, mascot::Act::Offline | mascot::Act::Online) {
+            self.under_or_dock(point)
+        } else {
+            point.map(|point| mascot::Place::Under {
+                x: point.x,
+                top: point.y,
+            })
+        };
+        if let Some(place) = place {
+            self.perform(act, place);
         }
     }
 
@@ -249,6 +287,20 @@ impl App {
             .charging_shown
             .is_none_or(|shown| shown.elapsed() >= CHARGING_AGAIN);
         let act = power_act(before, now, charging_allowed);
+        let battery =
+            muelle_shell::system::battery().map(|battery| (battery.percent, battery.charging));
+        // Read on every change, so the next one compares with this.
+        let level = self.moments.battery(battery);
+        if act.is_none()
+            && let Some(level) = level
+            && self.can_perform()
+        {
+            // Under the battery icon, where its figure is.
+            let point = self.menubar.as_ref().and_then(MenuBar::battery_anchor);
+            if let Some(place) = self.under_or_dock(point) {
+                self.perform(level, place);
+            }
+        }
         if let Some(act) = act {
             if matches!(act, mascot::Act::Charging | mascot::Act::Unplugged)
                 && self.config.mascot
@@ -271,9 +323,125 @@ impl App {
         if full == self.bin_full {
             return Ok(());
         }
+        let emptied = self.bin_full && !full;
         self.bin_full = full;
         self.assets.remove(recycle_bin::PARSING_NAME);
-        self.refresh()
+        self.refresh()?;
+        // Emptied: a proud hop on the recycle bin itself.
+        if emptied
+            && self
+                .moments
+                .tidied
+                .is_none_or(|tidied| tidied.elapsed() >= moments::TIDY_AGAIN)
+            && self.can_perform()
+            && let Some(place) = self.rim_over(recycle_bin::PARSING_NAME)
+        {
+            self.perform(mascot::Act::Tidy, place);
+            if self.mascot.is_some() {
+                self.moments.tidied = Some(Instant::now());
+            }
+        }
+        Ok(())
+    }
+
+    /// The first moment of this run soon (see `welcome`): after start, a
+    /// wake-up or an unlock.
+    pub(super) fn arm_welcome(&mut self) {
+        self.welcome_tries = WELCOME_TRIES;
+        // SAFETY: A timer on our own window.
+        unsafe {
+            SetTimer(Some(self.input), WELCOME_TIMER, WELCOME_DELAY_MS, None);
+        }
+    }
+
+    /// A new version's celebration in the middle of the dock, or the day's
+    /// greeting across it; each once (see `moments::welcome`).
+    pub(super) fn welcome(&mut self) -> Result<()> {
+        // SAFETY: A timer on our own window.
+        unsafe {
+            let _ = KillTimer(Some(self.input), WELCOME_TIMER);
+        }
+        let mut memory = moments::Memory::load();
+        let version = env!("CARGO_PKG_VERSION");
+        let today = moments::today();
+        let act = moments::welcome(&memory, &today, version);
+        if !self.config.mascot || act.is_none() {
+            // Nothing to show; a version seen without the mascot is not
+            // celebrated later.
+            if memory.version.as_deref() != Some(version) {
+                memory.version = Some(version.to_owned());
+                memory.save();
+            }
+            return Ok(());
+        }
+        let Some(act) = act else {
+            return Ok(());
+        };
+        if !self.can_perform() {
+            // Busy or full screen: later, a few times.
+            if self.welcome_tries > 0 && animations_enabled() {
+                self.welcome_tries -= 1;
+                // SAFETY: A timer on our own window.
+                unsafe {
+                    SetTimer(Some(self.input), WELCOME_TIMER, WELCOME_RETRY_MS, None);
+                }
+            }
+            return Ok(());
+        }
+        // The whole dock is the stage: the greeting crosses it, the update
+        // celebrates in its middle.
+        let Some(place) = self.dock_edge() else {
+            return Ok(());
+        };
+        self.perform(act, place);
+        if self.mascot.is_some() {
+            memory.version = Some(version.to_owned());
+            memory.greeted = Some(today);
+            memory.save();
+        }
+        Ok(())
+    }
+
+    /// Starts or stops the break reminder's minute (see `break_tick`).
+    pub(super) fn sync_break_timer(&mut self) {
+        // SAFETY: A timer on our own window.
+        unsafe {
+            if self.config.mascot && self.config.mascot_break_reminder {
+                SetTimer(Some(self.input), BREAK_TIMER, BREAK_CHECK_MS, None);
+            } else {
+                let _ = KillTimer(Some(self.input), BREAK_TIMER);
+                self.moments.rested();
+            }
+        }
+    }
+
+    /// Once a minute while the break reminder is on: after a long stretch
+    /// without a pause, the mascot yawns along the dock. Not during full
+    /// screen (a call, a film), which counts as the reminder's turn.
+    pub(super) fn break_tick(&mut self) -> Result<()> {
+        use windows::Win32::{
+            System::SystemInformation::GetTickCount,
+            UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO},
+        };
+        let mut last = LASTINPUTINFO {
+            cbSize: size_of::<LASTINPUTINFO>() as u32,
+            dwTime: 0,
+        };
+        // SAFETY: `last` has its size set and lives for the call.
+        let idle = if unsafe { GetLastInputInfo(&mut last) }.as_bool() {
+            // SAFETY: No arguments.
+            let now = unsafe { GetTickCount() };
+            std::time::Duration::from_millis(u64::from(now.wrapping_sub(last.dwTime)))
+        } else {
+            std::time::Duration::ZERO
+        };
+        if self.moments.break_due(idle, Instant::now())
+            && self.can_perform()
+            && let Some(place) = self.dock_edge()
+        {
+            self.perform(mascot::Act::Rest, place);
+        }
+        Ok(())
     }
 
     /// `until: None` is the bounce of an app being opened, which the user can

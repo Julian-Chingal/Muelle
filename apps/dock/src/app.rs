@@ -232,6 +232,16 @@ const ASSETS_DELAY_MS: u32 = 16;
 /// Non-activating windows cannot rely on capture outside their bounds.
 /// Armed only while dragging or holding a draggable icon.
 const DRAG_TIMER: usize = 16;
+/// The first moment of a run, a little after start, a wake-up or an unlock
+/// (see `moments::welcome`): the dock has settled by then.
+const WELCOME_TIMER: usize = 17;
+const WELCOME_DELAY_MS: u32 = 5_000;
+/// Tries again while the mascot is busy or something runs full screen.
+const WELCOME_RETRY_MS: u32 = 30_000;
+const WELCOME_TRIES: u8 = 10;
+/// The break reminder's minute, only while it is on.
+const BREAK_TIMER: usize = 18;
+const BREAK_CHECK_MS: u32 = 60_000;
 const DRAG_POLL_MS: u32 = 16;
 
 /// Screen-edge strip that reveals a hidden dock, in physical pixels.
@@ -752,6 +762,10 @@ pub(crate) struct App {
     power_seen: Option<(Option<bool>, bool)>,
     /// When the charger act last played.
     charging_shown: Option<Instant>,
+    /// The mascot's other moments (see `moments`).
+    moments: crate::moments::Moments,
+    /// Welcome attempts left while the mascot cannot come out.
+    welcome_tries: u8,
     /// Horizontal cursor position relative to the resting dock.
     cursor: f32,
     /// 0 = resting, 1 = full magnification.

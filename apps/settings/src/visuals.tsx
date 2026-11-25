@@ -74,8 +74,8 @@ export function ThemePreview({ appearance, wallpaper }: { appearance: Appearance
   return <span className="preview-screen preview-theme">
     {appearance === "auto"
       ? <><ThemeLayer theme="light" wallpaper={wallpaper} /><ThemeLayer theme="dark" wallpaper={wallpaper} half /></>
-      : appearance === "frosted"
-      ? <><ThemeLayer theme="frosted" wallpaper={wallpaper} /><ThemeLayer theme="frosted" wallpaper={wallpaper} half dark /></>
+      : appearance === "frosted" || appearance === "liquidGlass"
+      ? <><ThemeLayer theme={appearance} wallpaper={wallpaper} /><ThemeLayer theme={appearance} wallpaper={wallpaper} half dark /></>
       : <ThemeLayer theme={appearance} wallpaper={wallpaper} />}
   </span>;
 }

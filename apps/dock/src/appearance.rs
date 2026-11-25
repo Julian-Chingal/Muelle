@@ -1,6 +1,6 @@
 //! The theme Settings chose for the dock, the menu bar and their menus and
-//! panels. `Auto` and frosted glass follow Windows' light or dark mode;
-//! explicit light/dark and the clear/aurora palettes keep their chosen tone.
+//! panels. `Auto`, frosted and liquid glass follow Windows' light or dark mode;
+//! explicit light/dark and the clear palette keep their chosen tone.
 //! The menu bar takes the dock's theme unless it was given its own (#54).
 //!
 //! It is process state, like the Windows theme it replaces: everything that
@@ -19,12 +19,17 @@ pub enum Material {
     Standard,
     Frosted,
     Clear,
-    Aurora,
+    LiquidGlass,
 }
 
 #[cfg(test)]
 impl Material {
-    pub const ALL: [Self; 4] = [Self::Standard, Self::Frosted, Self::Clear, Self::Aurora];
+    pub const ALL: [Self; 4] = [
+        Self::Standard,
+        Self::Frosted,
+        Self::Clear,
+        Self::LiquidGlass,
+    ];
 }
 
 /// What a surface is drawn for.
@@ -65,7 +70,7 @@ const CHOICES: [Appearance; 6] = [
     Appearance::Dark,
     Appearance::Frosted,
     Appearance::Clear,
-    Appearance::Aurora,
+    Appearance::LiquidGlass,
     Appearance::Auto,
 ];
 
@@ -84,7 +89,7 @@ pub fn resolve(choice: Appearance, system_light: bool, glass: bool) -> Look {
         Appearance::Dark => (Material::Standard, false),
         Appearance::Frosted => (Material::Frosted, system_light),
         Appearance::Clear => (Material::Clear, false),
-        Appearance::Aurora => (Material::Aurora, false),
+        Appearance::LiquidGlass => (Material::LiquidGlass, system_light),
     };
     Look {
         material,
@@ -94,8 +99,10 @@ pub fn resolve(choice: Appearance, system_light: bool, glass: bool) -> Look {
 }
 
 fn look_of(choice: Appearance) -> Look {
-    let system_light =
-        matches!(choice, Appearance::Auto | Appearance::Frosted) && uses_light_theme();
+    let system_light = matches!(
+        choice,
+        Appearance::Auto | Appearance::Frosted | Appearance::LiquidGlass
+    ) && uses_light_theme();
     resolve(choice, system_light, transparency_enabled())
 }
 
@@ -137,7 +144,7 @@ mod tests {
                 system_light
             );
             assert!(resolve(Appearance::Light, system_light, true).light);
-            for dark in [Appearance::Dark, Appearance::Clear, Appearance::Aurora] {
+            for dark in [Appearance::Dark, Appearance::Clear] {
                 assert!(!resolve(dark, system_light, true).light);
             }
         }
@@ -151,6 +158,22 @@ mod tests {
                 assert_eq!(look.material, Material::Frosted);
                 assert_eq!(look.light, light);
                 assert_eq!(look.glass, glass);
+            }
+        }
+    }
+
+    #[test]
+    fn liquid_glass_follows_windows_and_its_transparency_policy() {
+        for light in [false, true] {
+            for glass in [false, true] {
+                assert_eq!(
+                    resolve(Appearance::LiquidGlass, light, glass),
+                    Look {
+                        material: Material::LiquidGlass,
+                        light,
+                        glass,
+                    }
+                );
             }
         }
     }

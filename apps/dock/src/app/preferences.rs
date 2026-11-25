@@ -198,8 +198,9 @@ impl App {
             // A hidden dock comes out of its new edge on every display.
             self.apply_edge_settings();
         }
-        // Updates may have been turned on or off.
+        // Updates may have been turned on or off, and the break reminder.
         self.schedule_update();
+        self.sync_break_timer();
         if workspaces_changed {
             self.sync()?;
         }

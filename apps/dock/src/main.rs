@@ -27,6 +27,7 @@ mod mascot;
 mod media;
 mod menu;
 mod menubar;
+mod moments;
 mod multi_window_view;
 mod recovery;
 mod scene;

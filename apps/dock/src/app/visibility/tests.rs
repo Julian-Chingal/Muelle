@@ -134,6 +134,8 @@ impl Fixture {
             // the queue starts, without playing a startup charging/saver act.
             power_seen: None,
             charging_shown: None,
+            moments: crate::moments::Moments::default(),
+            welcome_tries: 0,
             cursor: 0.0,
             amount: Spring::at(0.0, HOVER_OMEGA),
             last_frame: Instant::now(),

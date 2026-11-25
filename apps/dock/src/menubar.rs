@@ -107,6 +107,10 @@ const MONITOR_FONT: f32 = 10.0;
 /// How far each line reaches past the middle of the bar, in logical pixels.
 const MONITOR_TUCK: f32 = 1.0;
 const MONITOR_COLUMN_GAP: f32 = 8.0;
+/// The network lost this long is worth a word from the mascot; shorter
+/// drops (Wi-Fi roaming, a router restarting) say nothing.
+const NETWORK_TIMER: usize = 7;
+const OFFLINE_GRACE: Duration = Duration::from_secs(8);
 const ACCESSORIES_CHANGED: u32 = WM_APP + 30;
 
 const CLOCK_TIMER: usize = 1;
@@ -535,6 +539,11 @@ pub struct MenuBar {
     usage_anchors: Vec<(Provider, i32)>,
     /// A moment for the crab, waiting for the dock (see `take_cue`).
     cue: Option<(mascot::Act, i32)>,
+    /// Whether the network was up at the last reading (`None` before the
+    /// first), since when it is down, and whether that was told.
+    online: Option<bool>,
+    offline_since: Option<Instant>,
+    offline_told: bool,
     media: Option<media::Watch>,
     /// "Show what is playing": off, nothing listens to media sessions.
     media_enabled: bool,
@@ -1216,6 +1225,9 @@ impl MenuBar {
             usage: usage_enabled.then(|| UsageMonitor::new(hwnd.0 as isize, USAGE_CHANGED)),
             usage_anchors: Vec::new(),
             cue: None,
+            online: None,
+            offline_since: None,
+            offline_told: false,
             media: media_enabled
                 .then(|| media::Watch::start(hwnd, MEDIA_CHANGED))
                 .flatten(),
@@ -1823,6 +1835,7 @@ impl MenuBar {
 
     pub fn tick(&mut self, gfx: &Gfx) -> Result<()> {
         self.update_status();
+        self.watch_network();
         let audio_changed = self
             .audio
             .as_ref()
@@ -2231,16 +2244,96 @@ impl MenuBar {
 
     /// A moment worth the crab, found by the last update: the act and the
     /// screen x of the provider in the island. Taken once.
-    pub fn take_cue(&mut self) -> Option<(mascot::Act, POINT)> {
+    /// The moment waiting for the mascot, with the point under the bar
+    /// where it happens, or `None` when the bar does not show now.
+    pub fn take_cue(&mut self) -> Option<(mascot::Act, Option<POINT>)> {
         let (act, x) = self.cue.take()?;
-        let shown = self.visible && (!self.auto_hide || self.revealed);
-        shown.then_some((
+        Some((
             act,
-            POINT {
+            self.shown().then_some(POINT {
                 x,
                 y: self.bounds.bottom,
-            },
+            }),
         ))
+    }
+
+    /// Whether the bar is on screen now.
+    fn shown(&self) -> bool {
+        self.visible && (!self.auto_hide || self.revealed)
+    }
+
+    /// The point under a status icon, while the bar shows: its centre and
+    /// the bar's bottom edge, in screen pixels.
+    fn anchor(&self, item: Action) -> Option<POINT> {
+        if !self.shown() {
+            return None;
+        }
+        let (left, right, _) = self.zones.iter().find(|(_, _, action)| *action == item)?;
+        Some(POINT {
+            x: self.bounds.left + ((left + right) / 2.0) as i32,
+            y: self.bounds.bottom,
+        })
+    }
+
+    /// Under the battery icon, for the battery's moments.
+    pub fn battery_anchor(&self) -> Option<POINT> {
+        self.anchor(Action::Power)
+    }
+
+    /// The network lost for a few seconds, or back after that: a moment
+    /// under the network icon (see `take_cue`). Brief drops say nothing;
+    /// the first reading is only the starting point.
+    fn watch_network(&mut self) {
+        let online = !matches!(self.status.network, Network::Offline);
+        let before = self.online.replace(online);
+        if online {
+            if self.offline_told {
+                self.network_cue(mascot::Act::Online);
+            }
+            self.offline_since = None;
+            self.offline_told = false;
+            // SAFETY: A timer on our own window.
+            unsafe {
+                let _ = KillTimer(Some(self.hwnd), NETWORK_TIMER);
+            }
+            return;
+        }
+        if before == Some(true) {
+            self.offline_since = Some(Instant::now());
+            // Fires a tick, which reads the network again.
+            // SAFETY: A timer on our own window.
+            unsafe {
+                SetTimer(
+                    Some(self.hwnd),
+                    NETWORK_TIMER,
+                    OFFLINE_GRACE.as_millis() as u32,
+                    None,
+                );
+            }
+        } else if !self.offline_told
+            && self
+                .offline_since
+                .is_some_and(|since| since.elapsed() + Duration::from_millis(250) >= OFFLINE_GRACE)
+        {
+            self.offline_told = true;
+            // SAFETY: A timer on our own window.
+            unsafe {
+                let _ = KillTimer(Some(self.hwnd), NETWORK_TIMER);
+            }
+            self.network_cue(mascot::Act::Offline);
+        }
+    }
+
+    fn network_cue(&mut self, act: mascot::Act) {
+        let x = self
+            .zones
+            .iter()
+            .find(|(_, _, action)| *action == Action::Network)
+            .map_or(
+                self.bounds.left + (self.bounds.right - self.bounds.left) / 2,
+                |(left, right, _)| self.bounds.left + ((left + right) / 2.0) as i32,
+            );
+        self.cue = Some((act, x));
     }
 
     fn build(&mut self, gfx: &Gfx, look: &Look) -> Result<()> {
@@ -4431,6 +4524,57 @@ mod island_tests {
         assert!(bar.look == drawn);
         bar.set_clock_target(None);
         assert_eq!(bar.clock_target, None);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "Hidden compositor fixture; synthetic network states"]
+    fn native_network_moments_wait_out_brief_drops_and_tell_once() -> Result<()> {
+        use windows::Win32::System::WinRT::{
+            CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT,
+            DispatcherQueueOptions,
+        };
+        let _queue = unsafe {
+            CreateDispatcherQueueController(DispatcherQueueOptions {
+                dwSize: size_of::<DispatcherQueueOptions>() as u32,
+                threadType: DQTYPE_THREAD_CURRENT,
+                apartmentType: DQTAT_COM_STA,
+            })?
+        };
+        let gfx = Gfx::new()?;
+        let mut bar = MenuBar::create(&gfx, false, false, false, MenuBarWidgets::default())?;
+        bar.set_visible(false)?;
+        bar.cue = None;
+        bar.online = None;
+        let act = |bar: &mut MenuBar| bar.cue.take().map(|(act, _)| act);
+        // The first reading is only the starting point.
+        bar.status.network = Network::Ethernet;
+        bar.watch_network();
+        assert_eq!(act(&mut bar), None);
+        // A brief drop says nothing.
+        bar.status.network = Network::Offline;
+        bar.watch_network();
+        assert_eq!(act(&mut bar), None);
+        bar.status.network = Network::Ethernet;
+        bar.watch_network();
+        assert_eq!(act(&mut bar), None);
+        // Down for the grace period: told once.
+        bar.status.network = Network::Offline;
+        bar.watch_network();
+        bar.offline_since = Some(Instant::now() - OFFLINE_GRACE);
+        bar.watch_network();
+        assert_eq!(act(&mut bar), Some(mascot::Act::Offline));
+        bar.watch_network();
+        assert_eq!(act(&mut bar), None);
+        // Back: relief, also once.
+        bar.status.network = Network::Ethernet;
+        bar.watch_network();
+        assert_eq!(act(&mut bar), Some(mascot::Act::Online));
+        bar.watch_network();
+        assert_eq!(act(&mut bar), None);
+        // A hidden bar hands the moment over without a point (the dock's).
+        bar.cue = Some((mascot::Act::Online, 10));
+        assert!(bar.take_cue().is_some_and(|(_, point)| point.is_none()));
         Ok(())
     }
 

@@ -36,8 +36,8 @@ pub struct Theme {
     /// Blur what is behind the dock; without it the tint is drawn opaque.
     glass: bool,
     tint: Color,
-    /// Aurora's colours, drawn over the tint from one corner to the other.
-    glow: Option<[Color; 3]>,
+    /// A neutral, static optical coating; no capture, shader or animation loop.
+    lens: bool,
     /// Folders and window cards hold text: a clear dock still gets a
     /// panel that keeps it readable.
     panel_tint: Color,
@@ -50,11 +50,14 @@ pub struct Theme {
     indicator: Color,
 }
 
-/// Aurora: green, violet and pink lights over a night-blue tint.
-const AURORA: [Color; 3] = [
-    rgba(36, 214, 168, 150),
-    rgba(118, 92, 255, 140),
-    rgba(246, 96, 182, 132),
+/// Highlights at opposing edges and a quiet centre approximate curved glass.
+/// These compositor stops are allocated only when a surface is built.
+const LENS_COATING: [(f32, Color); 5] = [
+    (0.0, rgba(255, 255, 255, 76)),
+    (0.22, rgba(255, 255, 255, 12)),
+    (0.48, rgba(255, 255, 255, 0)),
+    (0.76, rgba(0, 0, 0, 24)),
+    (1.0, rgba(255, 255, 255, 48)),
 ];
 
 impl Theme {
@@ -73,14 +76,20 @@ impl Theme {
             (Material::Frosted, true) => pick(rgba(250, 251, 253, 104), rgba(236, 238, 242, 255)),
             (Material::Frosted, false) => pick(rgba(34, 38, 46, 144), rgba(40, 44, 52, 255)),
             (Material::Clear, _) => pick(rgba(255, 255, 255, 14), rgba(38, 40, 46, 255)),
-            (Material::Aurora, _) => pick(rgba(12, 16, 42, 92), rgba(22, 22, 50, 255)),
+            (Material::LiquidGlass, true) => {
+                pick(rgba(245, 249, 255, 36), rgba(230, 234, 240, 255))
+            }
+            (Material::LiquidGlass, false) => pick(rgba(22, 28, 38, 68), rgba(34, 40, 50, 255)),
         };
         let (sheen, rim) = match (material, light) {
-            (Material::Standard | Material::Aurora, _) => (38, [150, 40, 30, 105]),
+            (Material::Standard, _) => (38, [150, 40, 30, 105]),
             (Material::Frosted, true) => (46, [190, 60, 50, 135]),
             (Material::Frosted, false) => (30, [115, 35, 28, 90]),
             // All the light is on the edge, like a lens.
             (Material::Clear, _) => (56, [235, 80, 60, 190]),
+            (Material::LiquidGlass, _) if !glass => (0, [100, 30, 25, 70]),
+            (Material::LiquidGlass, true) => (76, [245, 95, 25, 220]),
+            (Material::LiquidGlass, false) => (60, [220, 70, 20, 185]),
         };
         let panel_tint = match material {
             // Text-bearing panels keep a denser surface than the icon-only
@@ -88,13 +97,15 @@ impl Theme {
             Material::Frosted if light => pick(rgba(250, 251, 253, 212), tint),
             Material::Frosted => pick(rgba(30, 34, 42, 212), tint),
             Material::Clear => pick(rgba(24, 24, 28, 150), tint),
+            Material::LiquidGlass if light => pick(rgba(245, 249, 255, 208), tint),
+            Material::LiquidGlass => pick(rgba(26, 32, 42, 208), tint),
             _ => tint,
         };
         Self {
             light,
             glass,
             tint,
-            glow: (material == Material::Aurora).then_some(AURORA),
+            lens: material == Material::LiquidGlass && glass,
             panel_tint,
             sheen,
             rim,
@@ -126,7 +137,10 @@ impl Theme {
             (Material::Frosted, true) => pick(rgba(250, 251, 253, 136), rgba(238, 240, 244, 255)),
             (Material::Frosted, false) => pick(rgba(28, 32, 40, 184), rgba(38, 42, 50, 255)),
             (Material::Clear, _) => pick(rgba(0, 0, 0, 38), rgba(30, 32, 38, 255)),
-            (Material::Aurora, _) => pick(rgba(10, 14, 38, 120), rgba(20, 20, 46, 255)),
+            (Material::LiquidGlass, true) => {
+                pick(rgba(245, 249, 255, 112), rgba(236, 240, 246, 255))
+            }
+            (Material::LiquidGlass, false) => pick(rgba(22, 28, 38, 136), rgba(30, 36, 46, 255)),
         };
         Self {
             tint,
@@ -135,23 +149,30 @@ impl Theme {
     }
 
     /// Brushes that fill a surface of this theme, bottom first: what is
-    /// behind it (with glass), the tint, and Aurora's lights.
+    /// behind it (with glass), the tint, and an optional lens coating.
     pub(crate) fn fills(&self, gfx: &Gfx) -> Result<Vec<CompositionBrush>> {
+        self.fills_on(gfx, DockEdge::Bottom)
+    }
+
+    fn fills_on(&self, gfx: &Gfx, edge: DockEdge) -> Result<Vec<CompositionBrush>> {
         let c = &gfx.compositor;
+        // Leave room for GlassSurface's sheen too, so building it never grows
+        // the buffer after adding the optional coating.
         let mut fills = Vec::with_capacity(4);
         if self.glass {
             fills.push(c.CreateHostBackdropBrush()?.cast()?);
         }
         fills.push(c.CreateColorBrushWithColor(self.tint)?.cast()?);
-        if let Some(colors) = self.glow {
-            let glow = c.CreateLinearGradientBrush()?;
-            glow.SetStartPoint(v2(0.0, 0.0))?;
-            glow.SetEndPoint(v2(1.0, 1.0))?;
-            let stops = glow.ColorStops()?;
-            for (at, color) in [0.0, 0.5, 1.0].into_iter().zip(colors) {
+        if self.lens {
+            let coating = c.CreateLinearGradientBrush()?;
+            let (start, end) = reflection_axis(edge);
+            coating.SetStartPoint(start)?;
+            coating.SetEndPoint(end)?;
+            let stops = coating.ColorStops()?;
+            for (at, color) in LENS_COATING {
                 stops.Append(&c.CreateColorGradientStopWithOffsetAndColor(at, color)?)?;
             }
-            fills.push(glow.cast()?);
+            fills.push(coating.cast()?);
         }
         Ok(fills)
     }
@@ -192,7 +213,7 @@ impl Theme {
             tint: self.panel_tint,
             ..*self
         };
-        let material = GlassSurface::build(gfx, panel, radius, stroke)?;
+        let material = GlassSurface::build(gfx, panel, radius, stroke, DockEdge::Bottom)?;
         material.glass.SetSize(size)?;
         material.outline.SetSize(size)?;
         material.rim.SetSize(size)?;
@@ -217,7 +238,7 @@ struct GlassSurface {
 }
 
 impl GlassSurface {
-    fn build(gfx: &Gfx, theme: Theme, radius: f32, stroke: f32) -> Result<Self> {
+    fn build(gfx: &Gfx, theme: Theme, radius: f32, stroke: f32, edge: DockEdge) -> Result<Self> {
         let c = &gfx.compositor;
         let glass = c.CreateContainerVisual()?;
         let outline = c.CreateRoundedRectangleGeometry()?;
@@ -225,16 +246,19 @@ impl GlassSurface {
         glass.SetClip(&c.CreateGeometricClipWithGeometry(&outline)?)?;
 
         let sheen = c.CreateLinearGradientBrush()?;
-        sheen.SetStartPoint(v2(0.0, 0.0))?;
-        sheen.SetEndPoint(v2(0.0, 1.0))?;
+        let (start, end) = reflection_axis(if theme.lens { edge } else { DockEdge::Bottom });
+        sheen.SetStartPoint(start)?;
+        sheen.SetEndPoint(end)?;
         let stops = sheen.ColorStops()?;
         stops.Append(
             &c.CreateColorGradientStopWithOffsetAndColor(0.0, rgba(255, 255, 255, theme.sheen))?,
         )?;
-        stops
-            .Append(&c.CreateColorGradientStopWithOffsetAndColor(0.55, rgba(255, 255, 255, 0))?)?;
+        let falloff = if theme.lens { 0.22 } else { 0.55 };
+        stops.Append(
+            &c.CreateColorGradientStopWithOffsetAndColor(falloff, rgba(255, 255, 255, 0))?,
+        )?;
 
-        let mut fills = theme.fills(gfx)?;
+        let mut fills = theme.fills_on(gfx, edge)?;
         fills.push(sheen.cast()?);
         for brush in &fills {
             let fill = c.CreateSpriteVisual()?;
@@ -288,6 +312,15 @@ fn v2(x: f32, y: f32) -> Vector2 {
 
 fn v3(x: f32, y: f32) -> Vector3 {
     Vector3 { X: x, Y: y, Z: 0.0 }
+}
+
+/// The highlight follows the dock's depth, even when its long axis is vertical.
+fn reflection_axis(edge: DockEdge) -> (Vector2, Vector2) {
+    match edge {
+        DockEdge::Bottom => (v2(0.0, 0.0), v2(0.0, 1.0)),
+        DockEdge::Left => (v2(1.0, 0.0), v2(0.0, 0.0)),
+        DockEdge::Right => (v2(0.0, 0.0), v2(1.0, 0.0)),
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -631,7 +664,7 @@ impl Scene {
             outline,
             rim,
             rim_geometry,
-        } = GlassSurface::build(gfx, theme, radius, stroke)?;
+        } = GlassSurface::build(gfx, theme, radius, stroke, frame.edge)?;
         layers.InsertAtTop(&glass)?;
         layers.InsertAtTop(&rim)?;
 

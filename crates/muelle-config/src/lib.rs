@@ -128,6 +128,9 @@ pub struct Config {
     /// Which one: Claude's crab by default, the cat, the fox, the capybara,
     /// the mochi or the girl.
     pub mascot_character: MascotCharacter,
+    /// The mascot also suggests a break after 90 minutes of work without a
+    /// pause. Off by default: a reminder is only welcome when asked for.
+    pub mascot_break_reminder: bool,
     /// Settings asks GitHub Releases for a newer version when it opens. The
     /// only network access in Muelle, so it can be turned off.
     pub check_updates: bool,
@@ -297,12 +300,13 @@ pub enum Language {
 pub enum Appearance {
     Light,
     Dark,
-    /// Milky glass with a fine grain (issue #50). Dark content.
+    /// Diffuse glass following Windows' light or dark palette.
     Frosted,
     /// Barely tinted glass with a bright rim. Light content.
     Clear,
-    /// Glass tinted with the colours of the northern lights. Light content.
-    Aurora,
+    /// Neutral lens-like glass. Older Aurora preferences migrate on read.
+    #[serde(rename = "liquidGlass", alias = "aurora")]
+    LiquidGlass,
     /// Follow Windows' light or dark mode. Also what a theme added by a newer
     /// version reads as (serde needs this fallback last).
     #[default]
@@ -388,6 +392,7 @@ impl Default for Config {
             bounce_on_open: true,
             mascot: true,
             mascot_character: MascotCharacter::Crab,
+            mascot_break_reminder: false,
             check_updates: true,
             auto_update: true,
             language: Language::Auto,
@@ -946,6 +951,7 @@ mod tests {
     #[test]
     fn the_crab_is_the_mascot_unless_the_cat_is_chosen() -> Result<(), serde_json::Error> {
         assert_eq!(Config::default().mascot_character, MascotCharacter::Crab);
+        assert!(!Config::default().mascot_break_reminder);
         let older: Config = serde_json::from_str("{}")?;
         assert_eq!(older.mascot_character, MascotCharacter::Crab);
         let cat: Config = serde_json::from_str(r#"{"mascotCharacter":"cat"}"#)?;
@@ -1091,7 +1097,7 @@ mod tests {
             serde_json::from_str(r#"{"appearance":"aurora","menuBarAppearance":"dark"}"#)?;
         assert_eq!(
             (own.appearance, own.menu_bar_appearance),
-            (Appearance::Aurora, Some(Appearance::Dark))
+            (Appearance::LiquidGlass, Some(Appearance::Dark))
         );
         assert_eq!(
             serde_json::from_str::<Config>(&serde_json::to_string(&own)?)?,
@@ -1100,6 +1106,21 @@ mod tests {
         // A theme from a newer version reads as automatic, as for the dock.
         let newer: Config = serde_json::from_str(r#"{"menuBarAppearance":"sepia"}"#)?;
         assert_eq!(newer.menu_bar_appearance, Some(Appearance::Auto));
+        Ok(())
+    }
+
+    #[test]
+    fn aurora_migrates_to_liquid_glass_for_both_surfaces() -> Result<(), serde_json::Error> {
+        let old: Config = serde_json::from_str(
+            r#"{"appearance":"aurora","menuBarAppearance":"aurora","iconSize":64}"#,
+        )?;
+        assert_eq!(old.appearance, Appearance::LiquidGlass);
+        assert_eq!(old.menu_bar_appearance, Some(Appearance::LiquidGlass));
+        assert_eq!(old.icon_size, 64);
+        let saved = serde_json::to_value(&old)?;
+        assert_eq!(saved["appearance"], "liquidGlass");
+        assert_eq!(saved["menuBarAppearance"], "liquidGlass");
+        assert_eq!(serde_json::from_value::<Config>(saved)?, old);
         Ok(())
     }
 

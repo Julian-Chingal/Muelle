@@ -45,15 +45,18 @@ fn disabling_transparency_keeps_every_palette_opaque_including_clear() {
             assert_eq!(dock.tint.A, 255);
             assert_eq!(dock.panel_tint.A, 255);
             assert_eq!(bar.tint.A, 255);
+            assert!(!dock.lens && !bar.lens);
         }
     }
 }
 
 #[test]
 #[ignore = "Native composition regression; no windows, wallpaper or system preference changes"]
-fn frosted_and_clear_build_real_backdrop_layers_only_when_windows_allows_them() -> Result<()> {
+fn glass_materials_build_bounded_backdrop_layers_only_when_windows_allows_them() -> Result<()> {
     use windows::{
-        UI::Composition::{CompositionBackdropBrush, CompositionColorBrush},
+        UI::Composition::{
+            CompositionBackdropBrush, CompositionColorBrush, CompositionLinearGradientBrush,
+        },
         Win32::System::WinRT::{
             CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT,
             DispatcherQueueOptions,
@@ -68,7 +71,7 @@ fn frosted_and_clear_build_real_backdrop_layers_only_when_windows_allows_them() 
         })?
     };
     let gfx = Gfx::new()?;
-    for material in [Material::Frosted, Material::Clear] {
+    for material in [Material::Frosted, Material::Clear, Material::LiquidGlass] {
         for light in [false, true] {
             for glass in [false, true] {
                 let look = Look {
@@ -88,9 +91,49 @@ fn frosted_and_clear_build_real_backdrop_layers_only_when_windows_allows_them() 
                         .Color()?;
                     assert_eq!(tint, theme.tint);
                     assert_eq!(tint.A == 255, !glass);
+                    let lens = material == Material::LiquidGlass && glass;
+                    assert_eq!(fills.len(), 1 + usize::from(glass) + usize::from(lens));
+                    if lens {
+                        let coating = fills[2].cast::<CompositionLinearGradientBrush>()?;
+                        assert_eq!(coating.ColorStops()?.Size()? as usize, LENS_COATING.len());
+                        assert_eq!(coating.EndPoint()?, v2(0.0, 1.0));
+                        for (edge, start, end) in [
+                            (DockEdge::Left, v2(1.0, 0.0), v2(0.0, 0.0)),
+                            (DockEdge::Right, v2(0.0, 0.0), v2(1.0, 0.0)),
+                        ] {
+                            let fills = theme.fills_on(&gfx, edge)?;
+                            let coating = fills[2].cast::<CompositionLinearGradientBrush>()?;
+                            assert_eq!((coating.StartPoint()?, coating.EndPoint()?), (start, end));
+                        }
+                    }
+                    // Build the real clipped surface as well as its brushes. This
+                    // catches unsupported compositor calls without touching the desktop.
+                    let panel = theme.panel(&gfx, v2(320.0, 160.0), 20.0, 1.0)?;
+                    assert_eq!(panel.Children()?.Count()?, 2);
                 }
             }
         }
     }
     Ok(())
+}
+
+#[test]
+fn liquid_glass_has_a_quieter_centre_and_readable_panels_in_both_palettes() {
+    for light in [false, true] {
+        let look = Look {
+            material: Material::LiquidGlass,
+            light,
+            glass: true,
+        };
+        let liquid = Theme::new(look);
+        let frosted = Theme::new(Look {
+            material: Material::Frosted,
+            ..look
+        });
+        assert!(liquid.tint.A < frosted.tint.A);
+        assert!(liquid.rim[0] > frosted.rim[0]);
+        assert!(liquid.panel_tint.A >= 200);
+        assert!(liquid.lens && Theme::for_bar(look).lens);
+        assert!(!frosted.lens);
+    }
 }

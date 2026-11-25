@@ -398,36 +398,37 @@ fn mochi_face(face: Face) -> (&'static [Mark], &'static [Mark]) {
     }
 }
 
-/// A chibi girl with her hair in a bun tied with a lavender band, in a
-/// white shirt; her hands rest on the dock, rise to her cheeks or her chin
-/// with her mood. She is not symmetric, so her rows are whole.
+/// A chibi girl seen three-quarters, turned right: a bun up on the left
+/// tied with a lavender scrunchie, a tail hanging behind her head, a white
+/// shirt; her hands rest on the dock, rise to her cheeks or her chin with
+/// her mood. She is not symmetric, so her rows are whole.
 const GIRL: Pet = Pet {
     half: &[
-        "..kkHHkk..kkkkk...........",
-        ".kHHHHHHkkHHHHHkkk........",
-        ".kHHIIHHHHHHHHHHHHk.......",
-        "kHHHHIHHHHHHHHIHHHHk......",
-        ".kHHHHHHHHHHIIHHHHHHk.....",
-        ".kHHHHHHQQHIHHHHHHHHHk....",
-        "kQQHHHHQQHHHHHHHHHHHHHk...",
-        ".kQPQQPHHHHHHHHHHHHHHHk...",
-        ".kHHQQHHHHHHHHHHHHHHHHHk..",
-        ".kHHHHHHHHHHHHHHHHHHHHHk..",
-        ".kHHHHHHKHKHKKHKHKHHHHHk..",
-        ".kHHHHHKKKKKKKKKKKKHHHHHk.",
-        ".kHHHHHKKKKKKKKKKKKHHHHHk.",
-        ".kHHHHKKKKKKKKKKKKKJHHHHk.",
-        ".kHHHKKKKKKKKKKKKKKJHHHHk.",
-        ".kHHHJKKKKKKKKKKKKKJHHHHk.",
-        ".kHHHHKKKKKKKKKKKKKHHHHHk.",
-        ".kHHHHkKKKKKKKKKKKkkHHHHk.",
-        "..kHHk.kkJJJJJJJkk..kHHk..",
-        "...kk.kkWWPWWWWPWWkk.kk...",
-        ".....kWWWPWWWWWWPWWWk.....",
-        ".....kWWWPWWWWWWPWWWk.....",
-        ".....kWWWPWWWWWWPWWWk.....",
-        ".....kVVVVVVVVVVVVVVk.....",
-        "......kkkkkkkkkkkkkk......",
+        "....kkkkk.................",
+        "...kHHHHHkkkkkkkk.........",
+        "..kHHIIHHHHHHHHHHkk.......",
+        "..kHHHIHHHHHHHHHHHHk......",
+        "..kHHHHHHHHHHHHIHHHHk.....",
+        "..kQHHHHHHQHHIIHHHHHHk....",
+        "...kQPHHPQHHIHHHHHHHHHk...",
+        "....kHQQHHHHHHHHHHHHHHk...",
+        "..kkHHHHHHHHHHHHHHHHHHHk..",
+        ".kHkHHHHHHHHHHHHHHHHHHHk..",
+        "kHHkHHHHHHHHHKKHHKHHHHHk..",
+        "kHHkHHHHHHHKKKKKKKKHHHHk..",
+        "kHHkHHHHHHKKKKKKKKKKHHHk..",
+        "kHHHkHHHHHKKKKKKKKKKHHk...",
+        "kHHHkHHHKKKKKKKKKKKKHHk...",
+        "kHHHHkHHJKKKKKKKKKKKHk....",
+        ".kHHHHkHHKKKKKKKKKKKk.....",
+        "..kHHk.kHKKKKKKKKKKk......",
+        "...kk...kkHJJJJJJkk.......",
+        "......kkWWWPWWWWPWWkk.....",
+        ".....kWWWWPWWWWWWPWWWk....",
+        ".....kWWWWPWWWWWWPWWWk....",
+        ".....kWWWWPWWWWWWPWWWk....",
+        ".....kVVVVVVVVVVVVVVVk....",
+        "......kkkkkkkkkkkkkkk.....",
     ],
     patches: &[],
     // She has no paws: her hands move instead (`girl_pose`).
@@ -440,126 +441,125 @@ const GIRL_FIST: &[&str] = &[".kkk.", "kKKKk", "kKJKk", ".kkk."];
 const GIRL_PALM: &[&str] = &[".kk.", "kKKk", "kKJk", ".kk."];
 
 /// Her hands: resting on the dock, raised in fists when happy, under her
-/// cheeks when in love, one at her chin when worried; mid-step, the left
+/// cheeks when in love, one at her chin when worried; mid-step, the first
 /// one a row higher.
 fn girl_pose(face: Face, step: bool) -> &'static [Patch] {
     match (face, step) {
-        (Face::Happy, false) => &[(18, 5, GIRL_FIST), (18, 16, GIRL_FIST)],
-        (Face::Happy, true) => &[(17, 5, GIRL_FIST), (18, 16, GIRL_FIST)],
-        (Face::Love, false) => &[(16, 5, GIRL_PALM), (16, 17, GIRL_PALM)],
-        (Face::Love, true) => &[(15, 5, GIRL_PALM), (16, 17, GIRL_PALM)],
-        (Face::Sad, false) => &[(16, 15, GIRL_FIST)],
-        (Face::Sad, true) => &[(15, 15, GIRL_FIST)],
-        (_, false) => &[(20, 7, GIRL_FIST), (20, 14, GIRL_FIST)],
-        (_, true) => &[(19, 7, GIRL_FIST), (20, 14, GIRL_FIST)],
+        (Face::Happy, false) => &[(18, 6, GIRL_FIST), (18, 17, GIRL_FIST)],
+        (Face::Happy, true) => &[(17, 6, GIRL_FIST), (18, 17, GIRL_FIST)],
+        (Face::Love, false) => &[(16, 8, GIRL_PALM), (16, 18, GIRL_PALM)],
+        (Face::Love, true) => &[(15, 8, GIRL_PALM), (16, 18, GIRL_PALM)],
+        (Face::Sad, false) => &[(16, 16, GIRL_FIST)],
+        (Face::Sad, true) => &[(15, 16, GIRL_FIST)],
+        (_, false) => &[(20, 8, GIRL_FIST), (20, 15, GIRL_FIST)],
+        (_, true) => &[(19, 8, GIRL_FIST), (20, 15, GIRL_FIST)],
     }
 }
 
 fn girl_face(face: Face) -> (&'static [Mark], &'static [Mark]) {
-    // Nothing mirrored: drawn where it goes.
+    // Nothing mirrored: drawn where it goes. Big eyes with a highlight.
     const NEUTRAL: [Mark; 20] = [
-        // Big eyes, with a highlight.
-        (12, 8, b'w'),
-        (12, 9, b'e'),
-        (13, 8, b'X'),
-        (13, 9, b'e'),
-        (14, 8, b'e'),
-        (14, 9, b'e'),
-        (12, 16, b'w'),
-        (12, 17, b'e'),
-        (13, 16, b'X'),
-        (13, 17, b'e'),
-        (14, 16, b'e'),
+        (12, 11, b'w'),
+        (12, 12, b'e'),
+        (13, 11, b'X'),
+        (13, 12, b'e'),
+        (14, 11, b'e'),
+        (14, 12, b'e'),
+        (12, 17, b'w'),
+        (12, 18, b'e'),
+        (13, 17, b'X'),
+        (13, 18, b'e'),
         (14, 17, b'e'),
-        (15, 6, b'p'),
-        (15, 7, b'p'),
+        (14, 18, b'e'),
+        (15, 10, b'p'),
+        (15, 11, b'p'),
         (15, 18, b'p'),
         (15, 19, b'p'),
-        (16, 11, b'e'),
-        (17, 12, b'e'),
-        (17, 13, b'e'),
-        (16, 14, b'e'),
+        (16, 13, b'e'),
+        (17, 14, b'e'),
+        (17, 15, b'e'),
+        (16, 16, b'e'),
     ];
     // Eyes closed in arcs, laughing.
     const HAPPY: [Mark; 22] = [
-        (13, 8, b'e'),
-        (12, 9, b'e'),
-        (12, 10, b'e'),
-        (13, 11, b'e'),
-        (13, 14, b'e'),
-        (12, 15, b'e'),
-        (12, 16, b'e'),
-        (13, 17, b'e'),
-        (15, 6, b'p'),
-        (15, 7, b'p'),
+        (13, 10, b'e'),
+        (12, 11, b'e'),
+        (12, 12, b'e'),
+        (13, 13, b'e'),
+        (13, 16, b'e'),
+        (12, 17, b'e'),
+        (12, 18, b'e'),
+        (13, 19, b'e'),
+        (15, 10, b'p'),
+        (15, 11, b'p'),
         (15, 18, b'p'),
         (15, 19, b'p'),
-        (15, 11, b'e'),
-        (15, 12, b'e'),
         (15, 13, b'e'),
         (15, 14, b'e'),
-        (16, 11, b'e'),
-        (16, 12, b'm'),
-        (16, 13, b'm'),
-        (16, 14, b'e'),
-        (17, 12, b'e'),
-        (17, 13, b'e'),
+        (15, 15, b'e'),
+        (15, 16, b'e'),
+        (16, 13, b'e'),
+        (16, 14, b'm'),
+        (16, 15, b'm'),
+        (16, 16, b'e'),
+        (17, 14, b'e'),
+        (17, 15, b'e'),
     ];
     // Eyes closed, blushing, a soft smile.
     const LOVE: [Mark; 18] = [
-        (13, 8, b'e'),
-        (12, 9, b'e'),
-        (12, 10, b'e'),
-        (13, 11, b'e'),
-        (13, 14, b'e'),
-        (12, 15, b'e'),
-        (12, 16, b'e'),
-        (13, 17, b'e'),
-        (14, 8, b'p'),
-        (14, 9, b'p'),
-        (15, 8, b'p'),
-        (14, 16, b'p'),
-        (14, 17, b'p'),
-        (15, 17, b'p'),
-        (16, 11, b'e'),
-        (17, 12, b'e'),
-        (17, 13, b'e'),
-        (16, 14, b'e'),
-    ];
-    // Worried brows, looking aside, a bead of sweat.
-    const SAD: [Mark; 16] = [
-        (11, 8, b'e'),
-        (12, 9, b'e'),
-        (13, 8, b'X'),
-        (13, 9, b'e'),
-        (14, 8, b'e'),
-        (14, 9, b'e'),
-        (11, 17, b'e'),
-        (12, 16, b'e'),
+        (13, 10, b'e'),
+        (12, 11, b'e'),
+        (12, 12, b'e'),
+        (13, 13, b'e'),
         (13, 16, b'e'),
-        (13, 17, b'X'),
-        (14, 16, b'e'),
-        (14, 17, b'e'),
-        (16, 12, b'e'),
+        (12, 17, b'e'),
+        (12, 18, b'e'),
+        (13, 19, b'e'),
+        (14, 10, b'p'),
+        (14, 11, b'p'),
+        (15, 11, b'p'),
+        (14, 18, b'p'),
+        (14, 19, b'p'),
+        (15, 18, b'p'),
         (16, 13, b'e'),
-        (13, 19, b'b'),
-        (14, 19, b'b'),
+        (17, 14, b'e'),
+        (17, 15, b'e'),
+        (16, 16, b'e'),
+    ];
+    // Worried brows, a small mouth, a bead of sweat.
+    const SAD: [Mark; 16] = [
+        (11, 11, b'e'),
+        (12, 12, b'e'),
+        (13, 11, b'X'),
+        (13, 12, b'e'),
+        (14, 11, b'e'),
+        (14, 12, b'e'),
+        (11, 18, b'e'),
+        (12, 17, b'e'),
+        (13, 17, b'e'),
+        (13, 18, b'X'),
+        (14, 17, b'e'),
+        (14, 18, b'e'),
+        (16, 14, b'e'),
+        (16, 15, b'e'),
+        (13, 20, b'b'),
+        (14, 20, b'b'),
     ];
     const SLEEP: [Mark; 14] = [
-        (13, 8, b'e'),
-        (14, 9, b'e'),
-        (14, 10, b'e'),
-        (13, 11, b'e'),
-        (13, 14, b'e'),
-        (14, 15, b'e'),
-        (14, 16, b'e'),
-        (13, 17, b'e'),
-        (15, 6, b'p'),
-        (15, 7, b'p'),
+        (13, 10, b'e'),
+        (14, 11, b'e'),
+        (14, 12, b'e'),
+        (13, 13, b'e'),
+        (13, 16, b'e'),
+        (14, 17, b'e'),
+        (14, 18, b'e'),
+        (13, 19, b'e'),
+        (15, 10, b'p'),
+        (15, 11, b'p'),
         (15, 18, b'p'),
         (15, 19, b'p'),
-        (16, 12, b'm'),
-        (16, 13, b'm'),
+        (16, 14, b'm'),
+        (16, 15, b'm'),
     ];
     let marks: &'static [Mark] = match face {
         Face::Neutral => &NEUTRAL,
@@ -1095,6 +1095,42 @@ pub enum Act {
     Unplugged,
     /// Energy saver started.
     Sleepy,
+    /// The battery fell to 20 % or 10 % on battery power.
+    BatteryLow,
+    /// The battery is full while charging: it can be unplugged.
+    BatteryFull,
+    /// The network has been lost for a few seconds.
+    Offline,
+    /// The network is back after being lost.
+    Online,
+    /// The first time Muelle is seen today: it crosses the dock and waves.
+    Greeting,
+    /// The recycle bin was emptied.
+    Tidy,
+    /// Muelle was updated: the first start of a new version.
+    Updated,
+    /// A long stretch of work without a pause: time for a break.
+    Rest,
+}
+
+impl Act {
+    #[cfg(test)]
+    pub const ALL: [Self; 14] = [
+        Self::Fresh,
+        Self::Nervous,
+        Self::Exhausted,
+        Self::Charging,
+        Self::Unplugged,
+        Self::Sleepy,
+        Self::BatteryLow,
+        Self::BatteryFull,
+        Self::Offline,
+        Self::Online,
+        Self::Greeting,
+        Self::Tidy,
+        Self::Updated,
+        Self::Rest,
+    ];
 }
 
 /// Where the act happens, in screen pixels.
@@ -1238,6 +1274,99 @@ impl Script {
                 walking: Vec::new(),
                 emote: Some((Emote::Drop, 0.85, 2.2)),
             },
+            // Trembles under the battery, a drop of sweat.
+            Act::BatteryLow => Self {
+                seconds: 2.6,
+                path: vec![(0.0, centre)],
+                hops: Vec::new(),
+                shake: Some((0.35, 2.0)),
+                faces: vec![(0.0, Face::Neutral), (0.3, Face::Sad)],
+                walking: Vec::new(),
+                emote: Some((Emote::Drop, 0.4, 2.2)),
+            },
+            // Two happy hops under the battery, then a heart.
+            Act::BatteryFull => Self {
+                seconds: 2.6,
+                path: vec![(0.0, centre)],
+                hops: vec![(0.3, 4.0), (0.8, 5.0)],
+                shake: None,
+                faces: vec![(0.0, Face::Happy), (1.25, Face::Love)],
+                walking: Vec::new(),
+                emote: Some((Emote::Heart, 1.3, 2.3)),
+            },
+            // Under the network icon: a small start, sad, a drop.
+            Act::Offline => Self {
+                seconds: 3.0,
+                path: vec![(0.0, centre)],
+                hops: vec![(0.35, 2.0)],
+                shake: None,
+                faces: vec![(0.0, Face::Neutral), (0.7, Face::Sad), (2.3, Face::Neutral)],
+                walking: Vec::new(),
+                emote: Some((Emote::Drop, 0.75, 2.1)),
+            },
+            // Relief: two hops, happy.
+            Act::Online => Self {
+                seconds: 2.4,
+                path: vec![(0.0, centre)],
+                hops: vec![(0.3, 4.0), (0.8, 3.0)],
+                shake: None,
+                faces: vec![(0.0, Face::Happy)],
+                walking: Vec::new(),
+                emote: Some((Emote::Heart, 1.0, 2.0)),
+            },
+            // Walks in from the left, stops in the middle to wave with two
+            // hops and a heart, and walks on out to the right.
+            Act::Greeting => {
+                let middle = width * 0.45 - crab / 2.0;
+                Self {
+                    seconds: 5.0,
+                    path: vec![
+                        (0.0, 0.0),
+                        (1.8, middle),
+                        (3.2, middle),
+                        (5.0, width - crab),
+                    ],
+                    hops: vec![(1.9, 4.0), (2.45, 4.0)],
+                    shake: None,
+                    faces: vec![(0.0, Face::Happy), (1.9, Face::Love), (3.2, Face::Happy)],
+                    walking: vec![(0.0, 1.8), (3.2, 5.0)],
+                    emote: Some((Emote::Heart, 2.0, 3.1)),
+                }
+            }
+            // On the recycle bin: one proud hop and a heart.
+            Act::Tidy => Self {
+                seconds: 2.4,
+                path: vec![(0.0, centre)],
+                hops: vec![(0.3, 5.0)],
+                shake: None,
+                faces: vec![(0.0, Face::Happy), (0.8, Face::Love)],
+                walking: Vec::new(),
+                emote: Some((Emote::Heart, 0.85, 2.0)),
+            },
+            // Three hops, higher each time, in the middle of the dock.
+            Act::Updated => Self {
+                seconds: 3.2,
+                path: vec![(0.0, centre)],
+                hops: vec![(0.3, 5.0), (0.75, 6.0), (1.25, 7.0)],
+                shake: None,
+                faces: vec![(0.0, Face::Happy), (1.8, Face::Love)],
+                walking: Vec::new(),
+                emote: Some((Emote::Heart, 1.8, 2.9)),
+            },
+            // Walks in slowly from the right, yawns and dozes off: a hint
+            // to rest too.
+            Act::Rest => {
+                let rest = width * 0.55 - crab / 2.0;
+                Self {
+                    seconds: 5.0,
+                    path: vec![(0.0, width - crab), (2.4, rest), (5.0, rest)],
+                    hops: Vec::new(),
+                    shake: None,
+                    faces: vec![(0.0, Face::Neutral), (2.5, Face::Sleep)],
+                    walking: vec![(0.0, 2.4)],
+                    emote: Some((Emote::Sleep, 2.7, 4.7)),
+                }
+            }
             // Shuffles in slowly from the right, stops and falls asleep.
             Act::Sleepy => {
                 let rest = width * 0.62 - crab / 2.0;
@@ -1854,6 +1983,24 @@ mod tests {
     }
 
     #[test]
+    fn every_act_stays_in_its_scene_and_shows_its_emote_in_time() {
+        for act in Act::ALL {
+            let script = Script::new(act, 1000.0, 44.0);
+            assert!(script.seconds > 0.0, "{act:?}");
+            for &(time, x) in &script.path {
+                assert!((0.0..=script.seconds).contains(&time), "{act:?}");
+                assert!((0.0..=1000.0 - 44.0).contains(&x), "{act:?}");
+            }
+            for &(start, _) in &script.hops {
+                assert!(start + HOP <= script.seconds, "{act:?}");
+            }
+            if let Some((_, from, to)) = script.emote {
+                assert!(from < to && to <= script.seconds, "{act:?}");
+            }
+        }
+    }
+
+    #[test]
     fn script_should_place_the_crab_along_its_path() {
         let script = Script::new(Act::Charging, 1000.0, 44.0);
         assert_eq!(script.x_at(0.0), 0.0);
@@ -1878,14 +2025,7 @@ mod tests {
             })?
         };
         let gfx = Gfx::new()?;
-        for act in [
-            Act::Fresh,
-            Act::Nervous,
-            Act::Exhausted,
-            Act::Charging,
-            Act::Unplugged,
-            Act::Sleepy,
-        ] {
+        for act in Act::ALL {
             for character in [
                 Character::Crab,
                 Character::Cat,

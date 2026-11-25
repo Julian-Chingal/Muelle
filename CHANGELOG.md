@@ -8,6 +8,22 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ## [Unreleased]
 
+### English
+
+- Liquid Glass replaces Aurora in Appearance for the Dock and menu bar (#67).
+  Neutral edge reflections and a brighter rim approximate curved glass with
+  static compositor layers, without capture or continuous animation. Frosted
+  glass is unchanged. Both Windows palettes and the opaque energy/transparency
+  fallback are supported; saved Aurora choices migrate to Liquid Glass.
+
+### Español
+
+- Liquid Glass sustituye a Aurora en Apariencia para el Dock y la barra (#67).
+  Reflejos neutros y un borde más definido aproximan el vidrio curvo mediante
+  capas estáticas del compositor, sin capturas ni animación continua. Se conserva
+  el esmerilado. Respeta ambas paletas de Windows y el modo opaco por energía o
+  transparencia; las preferencias de Aurora migran a Liquid Glass.
+
 ## [0.1.23]
 
 ### English
@@ -66,6 +82,16 @@ copia la sección de la versión que se publica a la release de GitHub.
   walking along the Dock). Choose one under Settings > Dock, each previewed
   from the dock's own sprites over a backdrop of its world; Claude's crab stays
   the default.
+- The mascot comes out for more moments, each where it belongs: under the
+  battery icon when it falls to 20 % or 10 % on battery or is full while
+  charging; under the network icon when the connection has been lost for a few
+  seconds (brief drops say nothing) and when it is back; on the recycle bin
+  when it is emptied; across the Dock to say hello the first time each day
+  (after start, waking up or unlocking); in the middle of the Dock after an
+  update. Without the menu bar on screen, its moments come to the Dock. An
+  optional break reminder (Settings > Dock, off by default) has it yawn after
+  90 minutes of work without a pause. All from events the dock already
+  receives; only the reminder adds a timer, once a minute, while it is on.
 - Opening an app that already runs in the notification area (Rainmeter, issue
   #59) now bounces its icon twice instead of up to 10 s: such apps may open no
   window when started again. One process lookup per click, only for apps
@@ -130,6 +156,17 @@ copia la sección de la versión que se publica a la release de GitHub.
   triste con una lágrima, dormido, caminando por el Dock). Se eligen en Ajustes
   > Dock, cada una dibujada con los mismos sprites del dock sobre un fondo de su
   mundo; el cangrejo de Claude sigue siendo la predeterminada.
+- La mascota aparece en más momentos, cada uno en su sitio: bajo el icono de
+  la batería cuando baja al 20 % o al 10 % sin cargador o se llena cargando;
+  bajo el icono de red cuando la conexión lleva unos segundos perdida (los
+  cortes breves no dicen nada) y cuando vuelve; sobre la papelera al vaciarla;
+  cruzando el Dock para saludar la primera vez de cada día (al iniciar, al
+  despertar o al desbloquear); en el centro del Dock tras una actualización.
+  Sin la barra superior en pantalla, sus momentos van al Dock. Un recordatorio
+  de descanso opcional (Ajustes > Dock, desactivado por defecto) la hace
+  bostezar tras 90 minutos de trabajo sin pausa. Todo con eventos que el dock
+  ya recibe; solo el recordatorio añade un temporizador, cada minuto, mientras
+  está activo.
 - Abrir una app que ya está en marcha en el área de notificaciones (Rainmeter,
   issue #59) hace rebotar su icono dos veces en vez de hasta 10 s: estas apps
   pueden no abrir ninguna ventana al iniciarlas de nuevo. Una consulta de
