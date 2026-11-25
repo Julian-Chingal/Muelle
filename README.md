@@ -60,7 +60,6 @@
 - Separate Settings app with live changes and a configurable Genie animation.
   Eight languages: English, Spanish, French, Simplified Chinese, Hindi, Arabic,
   Bengali and Portuguese. Pick a language or follow Windows automatically.
-- A watchdog restores the Windows taskbar if the dock exits unexpectedly.
 
 The Genie effect is **on by default** and can be turned off in Settings → Windows.
 While enabled, Muelle temporarily disables Windows window transitions for

@@ -57,7 +57,6 @@ en desarrollo activo.
 - App de Ajustes con cambios en vivo y efecto genio configurable. Ocho idiomas:
   español, inglés, francés, chino simplificado, hindi, árabe, bengalí y portugués.
   Elige uno en el desplegable o sigue automáticamente el idioma de Windows.
-- Un proceso guardián devuelve la barra de tareas de Windows si el dock se cierra de forma inesperada.
 
 El efecto genio está **activado por defecto** y se puede desactivar en Ajustes →
 Ventanas. Mientras está activo, Muelle
@@ -81,7 +80,8 @@ dibujar su animación; las devuelve al cerrarse.
 Abre **Muelle** desde el menú Inicio (o clic derecho en el dock → *Ajustes de
 Muelle…*) para cambiar el dock. Ajustes también busca actualizaciones y las instala.
 
-**Recuperar la barra de tareas:** clic derecho en el dock → *Salir de Muelle*.
+Para salir de Muelle y volver a mostrar la barra de tareas, haz clic derecho en
+el dock → *Salir de Muelle*.
 Para quitarlo del todo: Configuración de Windows → Aplicaciones → Aplicaciones
 instaladas → Muelle → Desinstalar; la barra vuelve y no queda nada en marcha.
 

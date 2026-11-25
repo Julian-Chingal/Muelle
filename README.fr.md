@@ -76,8 +76,6 @@ Agrandissement fluide, aperçus des fenêtres en direct et effet génie facultat
 - Une app Réglages avec changements en direct et effet génie configurable.
   Huit langues : anglais, espagnol, français, chinois simplifié, hindi, arabe,
   bengali et portugais. Choisissez une langue ou suivez automatiquement Windows.
-- Un processus de surveillance rétablit la barre des tâches de Windows si le
-  dock se ferme de façon inattendue.
 
 L'effet génie est **activé par défaut** et se désactive dans Réglages →
 Fenêtres. Tant qu'il est activé, Muelle désactive temporairement les
