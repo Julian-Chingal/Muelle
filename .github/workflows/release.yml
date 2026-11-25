@@ -219,7 +219,9 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/Assert-ReleaseAntivirus.ps1 -ReportDirectory antivirus-report -Path `
-            target/release/muelle-settings.exe,apps/settings/src-tauri/binaries/muelle-x86_64-pc-windows-msvc.exe,"target/release/bundle/nsis/Muelle_${env:VERSION}_x64-setup.exe"
+            target/release/muelle-settings.exe,apps/settings/src-tauri/binaries/muelle-x86_64-pc-windows-msvc.exe,"target/release/bundle/nsis/Muelle_${env:VERSION}_x64-setup.exe" `
+            -DownloadPath "target/release/bundle/nsis/Muelle_${env:VERSION}_x64-setup.exe" `
+            -DownloadSource "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/Muelle_${env:VERSION}_x64-setup.exe"
 
       - name: Keep antivirus verification evidence
         if: always() && env.SIGNING_MODE != '' && env.SIGNING_MODE != 'Test'

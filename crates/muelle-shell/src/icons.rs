@@ -1,22 +1,22 @@
-use std::mem::size_of;
+use std::{fs, mem::size_of, path::Path};
 
 use thiserror::Error;
 use windows::{
     Win32::{
-        Foundation::{S_OK, SIZE},
+        Foundation::{PROPERTYKEY, S_OK, SIZE},
         Graphics::Gdi::{
             BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC,
             GetDIBits, GetObjectW, HBITMAP, ReleaseDC,
         },
         UI::{
             Shell::{
-                IShellItem, IShellItemImageFactory, SHCreateItemFromParsingName, SHDefExtractIconW,
-                SIIGBF_ICONONLY,
+                IShellItem, IShellItem2, IShellItemImageFactory, SHCreateItemFromParsingName,
+                SHDefExtractIconW, SIIGBF_ICONONLY,
             },
             WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO},
         },
     },
-    core::{HSTRING, Interface},
+    core::{GUID, HSTRING, Interface},
 };
 
 #[derive(Debug, Error)]
@@ -71,6 +71,10 @@ pub fn load_icon(parsing_name: &str, size: u32) -> Result<IconImage, IconError> 
     {
         return Ok(icon);
     }
+    // A Store app's logo as its taskbar button shows it, without its tile.
+    if let Some(icon) = packaged_icon(parsing_name, size, crate::system::uses_light_theme()) {
+        return Ok(icon);
+    }
 
     let shell_error = |source| IconError::Shell {
         name: parsing_name.to_owned(),
@@ -90,6 +94,85 @@ pub fn load_icon(parsing_name: &str, size: u32) -> Result<IconImage, IconError> 
     };
 
     read_pixels(&bitmap).ok_or_else(|| IconError::Pixels(parsing_name.to_owned()))
+}
+
+/// `System.Tile.SmallLogoPath`: a Store app's small logo, relative to its
+/// package folder (`Assets\\AppList.png`).
+const SMALL_LOGO: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0x86d4_0b4d_9069_443c_819a_2a54_090d_ccec),
+    pid: 2,
+};
+/// `System.AppUserModel.PackageInstallPath`: a Store app's package folder.
+const PACKAGE_FOLDER: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0x9f4c_2855_9f79_4b39_a8d0_e1d4_2de1_d5f3),
+    pid: 15,
+};
+
+/// A Store app's logo without the tile behind it, as its taskbar button
+/// shows it (issue #73): the package's `<logo>.targetsize-N_altform-unplated
+/// .png`, its `lightunplated` form on a light taskbar. Windows 10's shell
+/// gives the Start tile instead, the logo on a square of the app's colour.
+/// `None` when the package has no such logo; the shell's image is used then.
+fn packaged_icon(parsing_name: &str, size: u32, light: bool) -> Option<IconImage> {
+    parsing_name.strip_prefix(crate::tracker::APPS_FOLDER)?;
+    // SAFETY: Shell item and property reads; the strings are freed by the
+    // helper below.
+    let (folder, logo) = unsafe {
+        let item: IShellItem2 =
+            SHCreateItemFromParsingName(&HSTRING::from(parsing_name), None).ok()?;
+        (
+            string_property(&item, &PACKAGE_FOLDER)?,
+            string_property(&item, &SMALL_LOGO)?,
+        )
+    };
+    let logo = Path::new(&folder).join(logo);
+    let names: Vec<String> = fs::read_dir(logo.parent()?)
+        .ok()?
+        .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+        .collect();
+    let stem = logo.file_stem()?.to_str()?;
+    let chosen = light
+        .then(|| unplated_logo(&names, stem, "lightunplated", size))
+        .flatten()
+        .or_else(|| unplated_logo(&names, stem, "unplated", size))?;
+    let bytes = fs::read(logo.with_file_name(chosen)).ok()?;
+    crate::imagery::decode(&bytes, size, 4096 * 4096)
+}
+
+/// Of `names` (files beside the logo), the `form` of `stem` closest to `size`:
+/// the smallest at least as large, or else the largest.
+fn unplated_logo<'a>(names: &'a [String], stem: &str, form: &str, size: u32) -> Option<&'a String> {
+    let prefix = format!("{}.targetsize-", stem.to_lowercase());
+    let suffix = format!("_altform-{form}.png");
+    let sized = names.iter().filter_map(|name| {
+        let lower = name.to_lowercase();
+        let target: u32 = lower
+            .strip_prefix(&prefix)?
+            .strip_suffix(&suffix)?
+            .parse()
+            .ok()?;
+        Some((target, name))
+    });
+    let (larger, smaller): (Vec<_>, Vec<_>) = sized.partition(|(target, _)| *target >= size);
+    larger
+        .into_iter()
+        .min_by_key(|(target, _)| *target)
+        .or_else(|| smaller.into_iter().max_by_key(|(target, _)| *target))
+        .map(|(_, name)| name)
+}
+
+/// A string property of a shell item.
+///
+/// # Safety
+/// `item` must be a live shell item.
+unsafe fn string_property(item: &IShellItem2, key: &PROPERTYKEY) -> Option<String> {
+    // SAFETY: The returned string is allocated by COM and freed here.
+    unsafe {
+        let value = item.GetString(key).ok()?;
+        let text = value.to_string().ok();
+        windows::Win32::System::Com::CoTaskMemFree(Some(value.0.cast()));
+        text.filter(|text| !text.is_empty())
+    }
 }
 
 /// The icon of a shell item (a file, a folder, a known folder) at `size`
@@ -253,6 +336,46 @@ fn read_bits(bitmap: &OwnedBitmap) -> Option<(u32, u32, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_unplated_logo_closest_to_the_size_is_chosen() {
+        let names: Vec<String> = [
+            "AppList.png",
+            "AppList.scale-200.png",
+            "AppList.targetsize-16_altform-unplated.png",
+            "AppList.targetsize-48_altform-unplated.png",
+            "AppList.targetsize-256_altform-unplated.png",
+            "AppList.targetsize-256_altform-unplated_contrast-black.png",
+            "AppList.targetsize-48_altform-lightunplated.png",
+            "applist.targetsize-96_altform-unplated.png",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        let pick = |form: &str, size: u32| {
+            unplated_logo(&names, "AppList", form, size).map(String::as_str)
+        };
+        // The smallest at least as large; names compare without case.
+        assert_eq!(
+            pick("unplated", 64),
+            Some("applist.targetsize-96_altform-unplated.png")
+        );
+        assert_eq!(
+            pick("unplated", 48),
+            Some("AppList.targetsize-48_altform-unplated.png")
+        );
+        // None large enough: the largest; contrast variants never.
+        assert_eq!(
+            pick("unplated", 512),
+            Some("AppList.targetsize-256_altform-unplated.png")
+        );
+        assert_eq!(
+            pick("lightunplated", 96),
+            Some("AppList.targetsize-48_altform-lightunplated.png")
+        );
+        // A package without that form: the shell's image instead.
+        assert_eq!(unplated_logo(&names, "Other", "unplated", 48), None);
+    }
 
     #[test]
     fn premultiply_should_scale_colors_by_alpha() {

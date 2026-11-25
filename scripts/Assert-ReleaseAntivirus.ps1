@@ -2,7 +2,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string[]]$Path,
-    [Parameter(Mandatory)][string]$ReportDirectory
+    [Parameter(Mandatory)][string]$ReportDirectory,
+    [string]$DownloadPath,
+    [uri]$DownloadSource
 )
 $ErrorActionPreference = 'Stop'
 
@@ -32,10 +34,28 @@ function Invoke-ReleaseDefenderScan([string]$Scanner, [string]$File) {
     }
 }
 
-function Assert-ReleaseAntivirus([string[]]$Path, [string]$ReportDirectory) {
+function Invoke-ReleaseAttachmentCheck([string]$File, [uri]$Source) {
+    if (-not ('MuelleRelease.AttachmentCheck' -as [type])) {
+        Add-Type -Path (Join-Path $PSScriptRoot 'ReleaseAttachmentCheck.cs') -ErrorAction Stop
+    }
+    [MuelleRelease.AttachmentCheck]::Check($File, $Source.AbsoluteUri)
+}
+
+function Assert-ReleaseAntivirus([string[]]$Path, [string]$ReportDirectory, [string]$DownloadPath, [uri]$DownloadSource) {
     $report = [ordered]@{ passed = $false; scannedAt = [DateTime]::UtcNow.ToString('o'); files = @() }
     New-Item -ItemType Directory -Path $ReportDirectory -Force | Out-Null
     try {
+        $download = $null
+        if ($DownloadPath -or $DownloadSource) {
+            if (-not $DownloadPath -or -not $DownloadSource -or
+                -not $DownloadSource.IsAbsoluteUri -or $DownloadSource.Scheme -ne 'https') {
+                throw 'Download verification requires an installer path and its absolute HTTPS source URL.'
+            }
+            $download = (Resolve-Path -LiteralPath $DownloadPath -ErrorAction Stop).Path
+            $included = @($Path | ForEach-Object { (Resolve-Path -LiteralPath $_ -ErrorAction Stop).Path })
+            if ($download -notin $included) { throw 'The download check must target one of the antivirus-verified files.' }
+            $report.downloadSource = $DownloadSource.AbsoluteUri
+        }
         $status = Get-MpComputerStatus -ErrorAction Stop
         if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled) {
             throw 'Microsoft Defender is unavailable or disabled. Antivirus verification cannot be skipped.'
@@ -56,13 +76,18 @@ function Assert-ReleaseAntivirus([string[]]$Path, [string]$ReportDirectory) {
                 fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($resolved).FileVersion
                 authenticode = [string]$signature.Status
                 publisher = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { $null }
+                downloadChecked = $false
                 passed = $false
             }
             $report.files += $row
             Invoke-ReleaseDefenderScan -Scanner $scanner -File $resolved
+            if ($resolved -eq $download) {
+                Invoke-ReleaseAttachmentCheck -File $resolved -Source $DownloadSource
+                $row.downloadChecked = $true
+            }
             # A removed, quarantined or changed file cannot inherit a clean result.
             if ((Get-FileHash -LiteralPath $resolved -Algorithm SHA256 -ErrorAction Stop).Hash -ne $hash) {
-                throw "Release bytes changed during antivirus verification: $resolved"
+                throw "Release bytes changed during antivirus or download verification: $resolved"
             }
             $row.passed = $true
         }

@@ -8,6 +8,20 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ## [Unreleased]
 
+### English
+
+- Release verification now also checks the final installer with Windows
+  Attachment Services using its HTTPS download origin. Rejection, unavailable
+  verification or changed/removed bytes stop publication before updater metadata
+  is produced. This does not replace Microsoft's review of antivirus detections.
+
+### Español
+
+- La verificación de releases comprueba además el instalador final con Windows
+  Attachment Services y su origen HTTPS de descarga. Un rechazo, una comprobación
+  no disponible o bytes cambiados/eliminados detienen la publicación antes de
+  generar metadatos del actualizador. No sustituye la revisión de Microsoft.
+
 ## [0.1.24]
 
 ### English
@@ -24,6 +38,10 @@ copia la sección de la versión que se publica a la release de GitHub.
   walking across the Dock. Choose one under Settings > Dock; each preview uses
   its own dock sprites over a backdrop of its world. Claude's crab remains the
   default, and the website showcases all six.
+- Store apps show their logo without the coloured square behind it, as their
+  taskbar button does (issue #73): Windows 10's shell gave their Start tile.
+  Muelle uses the package's own unplated logo, its light form on a light
+  taskbar, and the shell's image only for apps without one.
 - Apps' unread indicators show on their Dock icons, as on the taskbar (issue
   #65): the red dot or count Slack, Zoom or Teams put on their taskbar button
   appears at the top right of their icon, in place of the attention dot. Muelle
@@ -56,6 +74,11 @@ copia la sección de la versión que se publica a la release de GitHub.
   una lágrima, sueño y paseo por el Dock. Se eligen en Ajustes > Dock y tienen
   una vista previa con sus sprites sobre el fondo de su mundo. El cangrejo de
   Claude sigue siendo la opción predeterminada; la web muestra las seis.
+- Las apps de la Tienda muestran su logo sin el cuadrado de color detrás, como
+  su botón de la barra de tareas (issue #73): el shell de Windows 10 daba su
+  mosaico de Inicio. Muelle usa el logo sin fondo del propio paquete, en su
+  forma clara con la barra clara, y la imagen del shell solo para las apps que
+  no lo traen.
 - Los indicadores de mensajes sin leer de las apps se ven en sus iconos del
   Dock, como en la barra de tareas (issue #65): el punto rojo o el número que
   Slack, Zoom o Teams ponen en su botón aparece arriba a la derecha de su

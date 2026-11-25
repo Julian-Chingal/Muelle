@@ -22,8 +22,9 @@ use crate::{
 };
 
 /// Changed when icons are read differently, so entries from before are read
-/// again (2: programs' icons come from their own resources).
-const MAGIC: &[u8; 4] = b"WDI2";
+/// again (2: programs' icons come from their own resources; 3: Store apps'
+/// logos without their tile).
+const MAGIC: &[u8; 4] = b"WDI3";
 const HEADER_LEN: usize = 4 + 8 + 4 + 4 + 4;
 const SECONDS_PER_DAY: u64 = 86_400;
 
@@ -71,7 +72,16 @@ impl IconCache {
         // shortcut never shows a stale label.
         let kept = crate::pins::kept_shortcut_for(id);
         let source = kept.as_deref().unwrap_or(id);
-        let path = self.entry_path(&format!("{source}|{variant}"), size);
+        // A Store app's logo has a form for light taskbars (see
+        // `icons::load_icon`): each theme keeps its own entry.
+        let theme = if source.starts_with(crate::tracker::APPS_FOLDER)
+            && crate::system::uses_light_theme()
+        {
+            "|light"
+        } else {
+            ""
+        };
+        let path = self.entry_path(&format!("{source}|{variant}{theme}"), size);
         // The recycle bin's two icons come from where Windows names them, not
         // from the shell item, which shows whichever state Explorer has drawn
         // last (issue #15).
