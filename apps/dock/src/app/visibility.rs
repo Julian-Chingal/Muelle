@@ -122,7 +122,11 @@ impl App {
             screens.clear();
         }
         edge_watch::set_dock_monitors(screens, self.position());
-        let enabled = watch_dock || (self.menubar.is_some() && self.config.menu_bar_auto_hide);
+        // Both hiding modes of the menu bar reveal it at the top edge; the
+        // intelligent one while a window covers it (issue #61).
+        let enabled = watch_dock
+            || (self.menubar.is_some()
+                && (self.config.menu_bar_auto_hide || self.config.menu_bar_smart_hide));
         if enabled && self.edge_watch.is_none() {
             self.edge_watch = EdgeWatch::start(self.visual)
                 .inspect_err(|error| {
