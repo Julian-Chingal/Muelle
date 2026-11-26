@@ -37,10 +37,10 @@ en desarrollo activo.
 - Visibilidad del dock y de la barra superior: siempre visibles, automática o
   inteligente (se ocultan solo mientras la ventana activa llega debajo).
 - Apariencia: seguir a Windows o elegir Claro, Oscuro, Cristal esmerilado,
-  Transparente o Aurora; además, una galería de fondos sin conexión.
+  Transparente o Aurora.
 - Monitor del sistema opcional en la barra superior: CPU, memoria y velocidad
   de red.
-- Una mascota en pixel art para los momentos que importan: planes de IA,
+- Una mascota en pixel art para los momentos que importan:
   batería, red, papelera y un saludo cada día. Elige el cangrejo de Claude, un
   gato, un zorro, un capibara, un mochi o una chica; el recordatorio de
   descanso es opcional y viene desactivado.
@@ -50,10 +50,6 @@ en desarrollo activo.
   del teclado, el micrófono/cámara en uso y los iconos ocultos de la bandeja,
   además de los botones de búsqueda y Vista de tareas si están activados en la
   barra de Windows. El botón de Widgets viene desactivado; puedes activarlo en Ajustes.
-- Una isla curva en la barra superior con los límites de Claude Code, Codex,
-  OpenCode Go, Z.ai GLM Coding Plan, Gemini CLI y Antigravity. Z.ai muestra
-  sus límites de 5 horas y de la semana; las cuotas de Gemini Pro y Flash
-  aparecen por separado cuando están disponibles.
 - App de Ajustes con cambios en vivo y efecto genio configurable. Ocho idiomas:
   español, inglés, francés, chino simplificado, hindi, árabe, bengalí y portugués.
   Elige uno en el desplegable o sigue automáticamente el idioma de Windows.
@@ -153,24 +149,14 @@ pnpm build
 
 ## Privacidad
 
-Muelle no recoge datos, no tiene telemetría y nunca envía nada al proyecto. Hace
-dos tipos de conexión de red, ambas opcionales:
+Muelle no recoge datos, no tiene telemetría y nunca envía nada al proyecto. Su
+única conexión automática es la búsqueda de actualizaciones, que es opcional:
 
 - **Actualizaciones:** Ajustes pregunta a GitHub Releases si hay una versión
-  nueva al abrirse y, una vez al día, un par de minutos después de encender el
-  ordenador, Muelle hace lo mismo en segundo plano e instala lo que encuentre
-  (el dock en sí nunca usa la red). La instalación se desactiva en Ajustes →
-  Sistema → *Instalar actualizaciones automáticamente*, y todo con *Buscar
-  actualizaciones automáticamente*.
-- **Uso de proveedores de IA:** mientras un cliente compatible está abierto,
-  Muelle reutiliza su sesión local para consultar los límites disponibles de
-  su proveedor cada cinco minutos mientras está visible, o al pulsar Actualizar.
-  Gemini CLI y Antigravity pueden mostrar por separado las cuotas de Gemini Pro
-  y Flash; Antigravity se consulta mediante su servicio local. Las credenciales
-  permanecen en memoria; Muelle no las guarda. Para Z.ai Coding Plan, Muelle
-  lee la clave del `auth.json` local de OpenCode o de `ZAI_API_KEY` /
-  `ZHIPU_API_KEY` y la envía al servicio de cuotas de Z.ai. Desactiva las
-  consultas en Ajustes → Barra superior → *Mostrar uso de proveedores de IA*.
+  nueva al abrirse y una vez al día. Si la hay, Ajustes se abre para avisarte;
+  no se descarga ni instala nada hasta que tú lo decidas. Se desactiva en
+  Ajustes → Sistema → *Buscar actualizaciones automáticamente*.
+- La galería de fondos, que descarga imágenes de GitHub, está deshabilitada.
 - **Notificaciones:** el contenido y los avisos de las notificaciones se procesan exclusivamente en la memoria local de tu equipo; nunca se escriben en disco, ni se guardan en registros ni se transmiten por la red.
 
 Detalles: [muelle.crafter.run/privacy](https://muelle.crafter.run/privacy).

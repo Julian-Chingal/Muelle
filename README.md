@@ -42,9 +42,9 @@
 - Dock and menu bar visibility: always visible, automatic, or intelligent
   (hidden only while the active window reaches under them).
 - Appearance: follow Windows, or pick Light, Dark, Frosted glass, Clear or
-  Aurora; plus an offline wallpaper gallery.
+  Aurora.
 - An optional system monitor in the menu bar: CPU, memory and network speed.
-- A pixel-art mascot for moments worth it: AI plans, the battery, the network,
+- A pixel-art mascot for moments worth it: the battery, the network,
   the recycle bin and a daily hello. Pick Claude's crab, a cat, a fox, a
   capybara, a mochi or a girl; an optional break reminder is off by default.
 - Optional battery levels for compatible connected mice and headsets. Enable
@@ -53,10 +53,6 @@
   input language, microphone/camera in use, the hidden tray icons, plus
   the Search and Task View buttons if enabled on the Windows taskbar. The
   Widgets button is off by default and can be enabled in Settings.
-- A curved island in the menu bar for usage limits from Claude Code, Codex,
-  OpenCode Go, Z.ai GLM Coding Plan, Gemini CLI, and Antigravity. Z.ai shows
-  its 5-hour and weekly limits; Gemini Pro and Flash quotas appear separately
-  when available.
 - Separate Settings app with live changes and a configurable Genie animation.
   Eight languages: English, Spanish, French, Simplified Chinese, Hindi, Arabic,
   Bengali and Portuguese. Pick a language or follow Windows automatically.
@@ -150,22 +146,13 @@ pnpm build
 ## Privacy
 
 Muelle collects no data, has no telemetry and never sends anything to the
-project. It makes two kinds of network requests, both optional:
+project. Its only automatic network request is the optional update check:
 
-- **Updates:** Settings asks GitHub Releases for a newer version when it
-  opens, and once a day, a couple of minutes after you turn on the computer,
-  Muelle does the same in the background and installs what it finds (the dock
-  itself never uses the network). Turn off the installing in Settings → System
-  → *Install updates automatically*, or everything with *Check for updates
-  automatically*.
-- **AI provider usage:** while a supported client is running, Muelle reads its
-  existing local sign-in and asks that provider for available plan limits
-  every five minutes while visible, or when you press Refresh. For Gemini CLI
-  and Antigravity, Gemini Pro and Flash quotas are shown separately when
-  available; Antigravity is queried through its local service. Credentials stay
-  in memory and are never stored by Muelle. For Z.ai Coding Plan, Muelle reads
-  the key from OpenCode's local `auth.json` or `ZAI_API_KEY` /
-  `ZHIPU_API_KEY`, then sends it to Z.ai's quota service. Turn usage queries
-  off in Settings → Menu bar → *Show AI provider usage*.
+- **Updates:** Settings asks GitHub Releases for a newer version when it opens
+  and once a day. If there is one, Settings opens to tell you; nothing is
+  downloaded or installed until you choose to. Turn it off in Settings →
+  System → *Check for updates automatically*.
+
+The wallpaper gallery, which downloads images from GitHub, is disabled.
 
 Details: [muelle.crafter.run/privacy](https://muelle.crafter.run/privacy).

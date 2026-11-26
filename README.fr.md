@@ -54,10 +54,10 @@ Agrandissement fluide, aperçus des fenêtres en direct et effet génie facultat
   automatique ou intelligente (masqués seulement quand la fenêtre active passe
   dessous).
 - Apparence : suivre Windows, ou choisir Clair, Sombre, Verre dépoli,
-  Transparent ou Aurora ; plus une galerie de fonds d'écran hors ligne.
+  Transparent ou Aurora.
 - Un moniteur système facultatif dans la barre de menus : processeur, mémoire
   et débit réseau.
-- Une mascotte en pixel art pour les moments qui comptent : forfaits IA,
+- Une mascotte en pixel art pour les moments qui comptent :
   batterie, réseau, corbeille et un bonjour chaque jour. Choisissez le crabe de
   Claude, un chat, un renard, un capybara, un mochi ou une fille ; le rappel de
   pause est facultatif et désactivé par défaut.
@@ -69,10 +69,6 @@ Agrandissement fluide, aperçus des fenêtres en direct et effet génie facultat
   en cours d'utilisation, les icônes masquées de la zone de notification, ainsi
   que les boutons Rechercher, Affichage des tâches et Widgets s'ils figurent
   dans votre barre des tâches Windows.
-- Un îlot arrondi dans la barre de menus pour les limites d'utilisation de
-  Claude Code, Codex, OpenCode Go, Z.ai GLM Coding Plan, Gemini CLI et
-  Antigravity. Z.ai affiche ses quotas sur 5 heures et sur une semaine ; les
-  quotas Gemini Pro et Flash s'affichent séparément quand ils sont disponibles.
 - Une app Réglages avec changements en direct et effet génie configurable.
   Huit langues : anglais, espagnol, français, chinois simplifié, hindi, arabe,
   bengali et portugais. Choisissez une langue ou suivez automatiquement Windows.
@@ -169,25 +165,16 @@ pnpm build
 ## Confidentialité
 
 Muelle ne collecte aucune donnée, n'a pas de télémétrie et n'envoie jamais rien
-au projet. Il fait deux sortes de requêtes réseau, toutes deux facultatives :
+au projet. Sa seule requête réseau automatique est la recherche de mises à
+jour, facultative :
 
 - **Mises à jour :** Réglages demande à GitHub Releases s'il existe une
-  nouvelle version à son ouverture, et une fois par jour, quelques minutes
-  après l'allumage de l'ordinateur, Muelle fait de même en arrière-plan et
-  installe ce qu'il trouve (le dock lui-même n'utilise jamais le réseau).
-  Désactivez l'installation dans Réglages → Système → *Installer
-  automatiquement les mises à jour*, ou le tout avec *Rechercher
+  nouvelle version à son ouverture et une fois par jour. Le cas échéant,
+  Réglages s'ouvre pour vous avertir ; rien n'est téléchargé ni installé sans
+  votre accord. Désactivez-la dans Réglages → Système → *Rechercher
   automatiquement les mises à jour*.
-- **Utilisation des fournisseurs d'IA :** tant qu'un client pris en charge
-  tourne, Muelle lit sa connexion locale existante et demande à ce fournisseur
-  les limites disponibles de l'abonnement toutes les cinq minutes tant que
-  l'îlot est visible, ou quand vous appuyez sur Actualiser. Pour Gemini CLI et
-  Antigravity, les quotas Gemini Pro et Flash s'affichent séparément quand ils
-  sont disponibles ; Antigravity est interrogé via son service local. Les
-  identifiants restent en mémoire et ne sont jamais enregistrés par Muelle.
-  Pour Z.ai Coding Plan, Muelle lit la clé dans le fichier local `auth.json`
-  d'OpenCode ou dans `ZAI_API_KEY` / `ZHIPU_API_KEY`, puis l'envoie au service
-  de quotas de Z.ai. Désactivez les requêtes dans Réglages → Barre de menus →
-  *Afficher l'utilisation des fournisseurs d'IA*.
+
+La galerie de fonds d'écran, qui télécharge des images depuis GitHub, est
+désactivée.
 
 Détails : [muelle.crafter.run/privacy](https://muelle.crafter.run/privacy).
