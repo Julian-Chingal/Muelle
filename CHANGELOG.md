@@ -6,6 +6,23 @@ copies the section of the version being published into the GitHub release.
 Cada versión lista sus cambios en inglés y en español. El flujo de publicación
 copia la sección de la versión que se publica a la release de GitHub.
 
+## [Unreleased]
+
+### English
+
+- Uninstall now waits for the Dock and watchdog to stop, restores the original
+  Windows taskbar autohide preference and checks the result before deleting its
+  backup. The uninstaller can restore it even if muelle.exe is missing. Failed
+  verification stops uninstall before removing recovery data; an existing user
+  preference for autohide remains enabled.
+
+### Español
+
+- La desinstalación espera al cierre del Dock y su guardián, restaura el autohide
+  original de Windows y comprueba el resultado antes de borrar el respaldo.
+  Puede restaurarlo aunque falte muelle.exe. Si no se confirma, se detiene antes
+  de eliminar datos de recuperación; conserva el autohide si el usuario ya lo tenía.
+
 ## [0.1.25]
 
 ### English

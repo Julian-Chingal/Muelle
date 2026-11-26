@@ -78,7 +78,11 @@ fn main() -> Result<()> {
         }
         ["--restore"] => {
             app::request_quit();
-            taskbar::give_back();
+            if !taskbar::give_back() {
+                bail!(
+                    "no se confirmó la restauración de la barra de Windows; se conserva el respaldo"
+                );
+            }
             Ok(())
         }
         ["--autostart", "on"] => {

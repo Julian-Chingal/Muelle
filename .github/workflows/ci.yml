@@ -33,6 +33,10 @@ jobs:
         shell: pwsh
         run: ./scripts/Test-ReleaseAntivirus.ps1
 
+      - name: Check taskbar restoration without uninstalling or changing Explorer
+        shell: pwsh
+        run: ./scripts/Test-TaskbarRestore.ps1
+
       # The settings app embeds its built front end at compile time.
       - name: Build settings UI
         working-directory: apps/settings

@@ -8,7 +8,12 @@
 //! over and deleted only when it is restored. If the dock exits unexpectedly
 //! and restarts, its own auto-hide setting is not mistaken for the user's.
 
-use std::{env, fs, mem::size_of, path::PathBuf};
+use std::{
+    env, fs,
+    io::{self, Write},
+    mem::size_of,
+    path::{Path, PathBuf},
+};
 
 use windows::{
     Win32::{
@@ -17,8 +22,8 @@ use windows::{
             Shell::{ABM_GETSTATE, ABM_SETSTATE, ABS_AUTOHIDE, APPBARDATA, SHAppBarMessage},
             WindowsAndMessaging::{
                 FindWindowExW, FindWindowW, GWL_EXSTYLE, GetLayeredWindowAttributes,
-                GetWindowLongPtrW, LWA_ALPHA, SetLayeredWindowAttributes, SetWindowLongPtrW,
-                WS_EX_LAYERED, WS_EX_TRANSPARENT,
+                GetWindowLongPtrW, IsWindow, LWA_ALPHA, SetLayeredWindowAttributes,
+                SetWindowLongPtrW, WS_EX_LAYERED, WS_EX_TRANSPARENT,
             },
         },
     },
@@ -51,15 +56,33 @@ pub fn needs_visibility_repair() -> bool {
 fn take_over_taskbars(bars: &[HWND], file: &std::path::Path) -> bool {
     // A logon task can run before Explorer creates Shell_TrayWnd. Saving
     // an absent shell's state would lose the user's original preference.
-    if bars.is_empty() {
+    // SAFETY: Read-only lookup; a secondary bar alone cannot supply GETSTATE.
+    if bars.is_empty() || unsafe { FindWindowW(PRIMARY, None) }.is_err() {
         return false;
     }
-    if !file.exists() {
-        let original = if autohide_enabled() { "1" } else { "0" };
+    let Some(autohide) = autohide_enabled() else {
+        return false;
+    };
+    let original = match read_original(file) {
+        Ok(original) => original,
+        Err(error) => {
+            crate::log::line(&format!("respaldo de la barra no disponible: {error}"));
+            return false;
+        }
+    };
+    if original.is_none() {
+        let original = if autohide { "1" } else { "0" };
         let saved = file
             .parent()
             .map_or(Ok(()), fs::create_dir_all)
-            .and_then(|()| fs::write(file, original));
+            .and_then(|()| {
+                let mut backup = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(file)?;
+                backup.write_all(original.as_bytes())?;
+                backup.sync_all()
+            });
         if let Err(error) = saved {
             // Never hide the system taskbar unless the guard can restore its
             // original state after a crash or hang.
@@ -69,8 +92,8 @@ fn take_over_taskbars(bars: &[HWND], file: &std::path::Path) -> bool {
             return false;
         }
     }
-    if !autohide_enabled() {
-        set_autohide(true);
+    if !autohide && !set_autohide(true) {
+        return false;
     }
     let mut hidden = true;
     for &hwnd in bars {
@@ -92,25 +115,66 @@ pub fn give_back_on_exit() {
     if session_ending && crate::autostart::is_enabled() {
         return;
     }
-    give_back();
+    if !give_back() {
+        crate::log::line("no se confirmó la restauración de la barra; se conserva el respaldo");
+    }
 }
 
-/// Restores the taskbar to its state before `take_over`. Has no effect if the
-/// dock did not take it over.
-pub fn give_back() {
-    let file = state_file();
-    let Ok(original) = fs::read_to_string(&file) else {
-        // No saved state; make sure the taskbar is visible anyway.
-        for hwnd in taskbars() {
-            set_ghost(hwnd, false);
+/// Restores and verifies the saved preference before removing the backup.
+/// Without a backup, reveal the taskbar but preserve Windows' current preference.
+pub fn give_back() -> bool {
+    restore_saved(&state_file(), |original| {
+        let bars = taskbars();
+        // SAFETY: Read-only lookup of Explorer's primary taskbar.
+        if bars.is_empty() || unsafe { FindWindowW(PRIMARY, None) }.is_err() {
+            return original.is_none();
         }
-        return;
-    };
-    for hwnd in taskbars() {
-        set_ghost(hwnd, false);
+        let mut restored = true;
+        for hwnd in bars {
+            restored &= set_ghost(hwnd, false);
+        }
+        if let Some(original) = original {
+            restored &= set_autohide(original);
+        }
+        restored
+    })
+}
+
+fn read_original(file: &Path) -> io::Result<Option<bool>> {
+    match fs::read_to_string(file) {
+        Ok(value) => match value.trim() {
+            "0" => Ok(Some(false)),
+            "1" => Ok(Some(true)),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid taskbar-original",
+            )),
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
     }
-    set_autohide(original.trim() == "1");
-    let _ = fs::remove_file(file);
+}
+
+fn restore_saved(file: &Path, mut restore: impl FnMut(Option<bool>) -> bool) -> bool {
+    let original = match read_original(file) {
+        Ok(original) => original,
+        Err(_) => {
+            // Recover visibility even if a corrupt record prevents restoring
+            // the preference. Keep that record and report failure.
+            restore(None);
+            return false;
+        }
+    };
+    if !restore(original) {
+        return false;
+    }
+    if original.is_some()
+        && let Err(error) = fs::remove_file(file)
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        return false;
+    }
+    true
 }
 
 /// Whether `hwnd` is a taskbar Muelle has hidden. Windows still gives it the
@@ -152,18 +216,30 @@ fn appbar_data() -> APPBARDATA {
     }
 }
 
-fn autohide_enabled() -> bool {
+fn autohide_enabled() -> Option<bool> {
     let mut data = appbar_data();
     // SAFETY: `data` is a valid APPBARDATA with its size initialized.
     let state = unsafe { SHAppBarMessage(ABM_GETSTATE, &mut data) };
-    state as u32 & ABS_AUTOHIDE != 0
+    // An absent/replaced shell must not be mistaken for autohide being off.
+    let present = unsafe {
+        !data.hWnd.is_invalid()
+            && IsWindow(Some(data.hWnd)).as_bool()
+            && FindWindowW(PRIMARY, None).ok() == Some(data.hWnd)
+    };
+    present.then_some(state as u32 & ABS_AUTOHIDE != 0)
 }
 
-fn set_autohide(enabled: bool) {
+fn set_autohide(enabled: bool) -> bool {
     let mut data = appbar_data();
-    data.lParam = LPARAM(if enabled { ABS_AUTOHIDE as isize } else { 0 });
+    // SAFETY: Valid output buffer, as in autohide_enabled.
+    let current = unsafe { SHAppBarMessage(ABM_GETSTATE, &mut data) };
+    data.lParam = LPARAM(
+        ((current as u32 & !ABS_AUTOHIDE) | if enabled { ABS_AUTOHIDE } else { 0 }) as isize,
+    );
     // SAFETY: Same as above.
     unsafe { SHAppBarMessage(ABM_SETSTATE, &mut data) };
+    // SETSTATE always returns TRUE; only GETSTATE verifies the preference.
+    autohide_enabled() == Some(enabled)
 }
 
 fn set_ghost(hwnd: HWND, ghost: bool) -> bool {
@@ -180,7 +256,15 @@ fn set_ghost(hwnd: HWND, ghost: bool) -> bool {
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style & !GHOST_STYLES);
         }
     }
-    !ghost || is_ghosted(hwnd)
+    if ghost {
+        is_ghosted(hwnd)
+    } else {
+        // SAFETY: Read-only verification; destroyed handles must not pass.
+        unsafe {
+            IsWindow(Some(hwnd)).as_bool()
+                && GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & GHOST_STYLES == 0
+        }
+    }
 }
 
 fn is_ghosted(hwnd: HWND) -> bool {
@@ -201,6 +285,79 @@ fn is_ghosted(hwnd: HWND) -> bool {
 mod tests {
     use super::*;
 
+    struct Backup(PathBuf);
+
+    impl Backup {
+        fn new(value: &str) -> io::Result<Self> {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(io::Error::other)?
+                .as_nanos();
+            let path = env::temp_dir().join(format!(
+                "muelle-taskbar-restore-{}-{unique}",
+                std::process::id()
+            ));
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)?
+                .write_all(value.as_bytes())?;
+            Ok(Self(path))
+        }
+    }
+
+    impl Drop for Backup {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn restoration_verifies_both_original_preferences_before_deleting_the_backup() -> io::Result<()>
+    {
+        for (saved, enabled) in [("0", false), ("1", true)] {
+            let backup = Backup::new(saved)?;
+            assert!(restore_saved(&backup.0, |original| {
+                assert!(
+                    backup.0.exists(),
+                    "backup must survive until verification finishes"
+                );
+                assert_eq!(original, Some(enabled));
+                true
+            }));
+            assert!(!backup.0.exists());
+            assert!(restore_saved(&backup.0, |original| original.is_none()));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_missing_shell_or_failed_verification_keeps_the_original_for_retry() -> io::Result<()> {
+        for saved in ["0", "1"] {
+            let backup = Backup::new(saved)?;
+            assert!(!restore_saved(&backup.0, |_| false));
+            assert_eq!(fs::read_to_string(&backup.0)?, saved);
+            assert!(restore_saved(&backup.0, |_| true));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn corrupt_backups_are_kept_without_guessing_the_users_preference() -> io::Result<()> {
+        for saved in ["", "2", "invalid"] {
+            let backup = Backup::new(saved)?;
+            let mut visibility_recovered = false;
+            assert!(!restore_saved(&backup.0, |original| {
+                assert_eq!(original, None);
+                visibility_recovered = true;
+                true
+            }));
+            assert!(visibility_recovered);
+            assert_eq!(fs::read_to_string(&backup.0)?, saved);
+        }
+        Ok(())
+    }
+
     #[test]
     fn an_absent_shell_does_not_save_a_false_original_taskbar_state() {
         let file = env::temp_dir().join(format!("muelle-absent-shell-{}.txt", std::process::id()));
@@ -212,6 +369,7 @@ mod tests {
     #[test]
     fn a_destroyed_taskbar_is_not_reported_as_successfully_hidden() {
         assert!(!set_ghost(HWND::default(), true));
+        assert!(!set_ghost(HWND::default(), false));
     }
 
     #[test]
