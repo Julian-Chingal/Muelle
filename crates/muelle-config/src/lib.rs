@@ -129,12 +129,9 @@ pub struct Config {
     /// The mascot also suggests a break after 90 minutes of work without a
     /// pause. Off by default: a reminder is only welcome when asked for.
     pub mascot_break_reminder: bool,
-    /// Settings asks GitHub Releases for a newer version when it opens. The
-    /// only network access in Muelle, so it can be turned off.
+    /// Ask GitHub Releases for a newer version when Settings opens and once a
+    /// day, and announce it. Installing always takes a click.
     pub check_updates: bool,
-    /// With `check_updates`: once a day, while the user is away from the
-    /// computer, new versions are downloaded and installed without asking.
-    pub auto_update: bool,
     pub language: Language,
     /// The look of the dock, the menu bar and their menus and panels.
     /// `Auto` (the default) follows Windows' light or dark mode.
@@ -391,7 +388,6 @@ impl Default for Config {
             mascot_character: MascotCharacter::Crab,
             mascot_break_reminder: false,
             check_updates: true,
-            auto_update: true,
             language: Language::Auto,
             appearance: Appearance::Auto,
             menu_bar_appearance: None,

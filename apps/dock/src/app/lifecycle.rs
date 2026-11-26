@@ -444,7 +444,7 @@ impl App {
     pub(super) fn schedule_update(&self) {
         // SAFETY: Timers on our own window; setting one again replaces it.
         unsafe {
-            if !self.config.check_updates || !self.config.auto_update {
+            if !self.config.check_updates {
                 let _ = KillTimer(Some(self.input), UPDATE_TIMER);
                 return;
             }
@@ -463,18 +463,18 @@ impl App {
         }
     }
 
-    /// Starts the background update: Settings without a window, which does
-    /// the network part and exits when there is nothing to install. The
-    /// dock itself never touches the network.
+    /// Starts the background update check: Settings without a window, which
+    /// does the network part. It opens its window to announce a newer
+    /// version, and exits otherwise. Nothing is installed without a click.
     pub(super) fn update_now(&mut self) {
         // SAFETY: Our own timer.
         unsafe {
             let _ = KillTimer(Some(self.input), UPDATE_TIMER);
         }
-        if !self.config.check_updates || !self.config.auto_update {
+        if !self.config.check_updates {
             return;
         }
-        // Installing restarts the dock: not in the middle of a game.
+        // The notice opens a window: not in the middle of a game.
         if self.fullscreen {
             // SAFETY: Our own timer.
             unsafe { SetTimer(Some(self.input), UPDATE_TIMER, millis(UPDATE_RETRY), None) };

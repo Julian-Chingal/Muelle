@@ -52,7 +52,6 @@ export interface Config {
   mascotCharacter?: MascotCharacter;
   mascotBreakReminder?: boolean;
   checkUpdates: boolean;
-  autoUpdate: boolean;
   language: Language;
   appearance: Appearance;
   /** The menu bar's own theme; null (or missing) gives it the dock's. */

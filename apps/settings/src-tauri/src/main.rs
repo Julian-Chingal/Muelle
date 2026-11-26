@@ -1,9 +1,9 @@
 //! Muelle settings: a separate process that exists only while its window is
 //! open. It edits the configuration file and tells the dock to reload it.
 //!
-//! With `--update` it opens no window: the dock starts it that way once a
-//! day, while the user is away, to install a newer version if there is one.
-//! It exits as soon as it knows there is none.
+//! With `--update` the dock starts it once a day to look for a newer
+//! version. If there is one, the window opens to announce it; installing
+//! always takes a click. Otherwise it exits without showing anything.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -153,8 +153,7 @@ async fn set_autostart(enabled: bool) -> Result<(), String> {
 #[derive(Default)]
 struct PendingUpdate(Mutex<Option<Update>>);
 
-/// Asks GitHub Releases for a newer version; returns it, if any. Only runs
-/// while Settings is open: the dock itself never touches the network.
+/// Asks GitHub Releases for a newer version; returns it, if any.
 #[tauri::command]
 async fn check_update(
     app: tauri::AppHandle,
@@ -283,31 +282,25 @@ async fn install_update(
 /// The argument the dock starts this app with for a background update.
 const UPDATE_ARG: &str = "--update";
 
-/// Checks for a newer version and installs it without asking, as the user
-/// chose in Settings; the installer stops and restarts the dock. Exits when
-/// there is nothing to do or anything fails: the next try is tomorrow.
-async fn update_in_background(app: AppHandle) {
-    let config = get_config();
-    let allowed = config.check_updates && config.auto_update;
+/// Looks for a newer version and, if there is one, opens the window, whose
+/// banner announces it. Never downloads or installs: that takes a click.
+/// Exits when there is nothing to announce or the check fails.
+async fn notify_in_background(app: AppHandle) {
     let found = match app.updater_builder().timeout(Duration::from_secs(60)) {
-        // The installer starts the dock again; this app need not come back.
-        builder if allowed => match builder.restart_after_install(false).build() {
+        builder if get_config().check_updates => match builder.build() {
             Ok(updater) => updater.check().await.ok().flatten(),
             Err(_) => None,
         },
         _ => None,
     };
     // Opening Settings meanwhile lands in this process (single instance):
-    // then it stays as the user's Settings, which shows the update itself,
-    // and installing must not close it under them.
-    let window_opened = || app.get_webview_window("main").is_some();
-    if let Some(update) = found.filter(|_| !window_opened())
-        && let Err(error) = update.download_and_install(|_, _| {}, || {}).await
-    {
-        eprintln!("muelle-settings: actualización: {error}");
-    }
-    if !window_opened() {
-        app.exit(0);
+    // that window already checks and shows the update itself.
+    if app.get_webview_window("main").is_none() {
+        if found.is_some() {
+            show_window(&app);
+        } else {
+            app.exit(0);
+        }
     }
 }
 
@@ -352,7 +345,7 @@ fn main() {
         .manage(PendingUpdate::default())
         .setup(move |app| {
             if background {
-                tauri::async_runtime::spawn(update_in_background(app.handle().clone()));
+                tauri::async_runtime::spawn(notify_in_background(app.handle().clone()));
             } else {
                 show_window(app.handle());
             }

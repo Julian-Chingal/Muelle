@@ -148,7 +148,7 @@ export function App() {
         if (!alive) return;
         setConfig(loaded);
         setAutostartState(starts);
-        // The only network access in Muelle, and the user can turn it off.
+        // The user can turn the check off.
         if (!loaded.checkUpdates) {
           setUpdateState({ kind: "off" });
           return;
@@ -728,13 +728,6 @@ export function App() {
                     onChange={(checkUpdates) => update({ checkUpdates })}
                   />
                 </Row>
-                <SubRow label={t.autoUpdate} hint={t.autoUpdateHint} open={config.checkUpdates}>
-                  <Toggle
-                    label={t.autoUpdate}
-                    checked={config.autoUpdate}
-                    onChange={(autoUpdate) => update({ autoUpdate })}
-                  />
-                </SubRow>
                 <Row icon={<SettingIcon name="updates" />} label={t.updatesNow} hint={updateHint(t, updateState, version)}>
                   {waiting && updateState.kind !== "installing" ? (
                     <button type="button" className="push push-primary" onClick={() => install(waiting)}>
