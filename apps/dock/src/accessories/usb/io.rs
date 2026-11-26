@@ -1,6 +1,6 @@
 //! Native HID operations used only inside a disposable query process.
 use super::protocol::{self, Model, Profile, Reading, Wire};
-use anyhow::{Result, bail, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use std::time::{Duration, Instant};
 use windows::{
     Win32::{
@@ -282,9 +282,10 @@ impl Drop for PendingRead<'_> {
 
 /// How long one HID++ request through a receiver may wait for its reply.
 /// The radio wakes a mouse in power saving first (a G305 spends most of its
-/// time there), which takes longer than a wired reply; the reference monitor
-/// waits 400 ms for its ping. The query's total budget is unchanged.
-const HIDPP_REPLY: Duration = Duration::from_millis(400);
+/// time there). Leave room for the complete G305 feature-discovery sequence,
+/// without retrying commands or increasing the frequency of queries.
+const HIDPP_REPLY: Duration = Duration::from_millis(600);
+const HIDPP_BUDGET: Duration = Duration::from_secs(3);
 
 struct LogitechWire {
     collections: Vec<Hid>,
@@ -353,7 +354,8 @@ pub fn query(paths: &[String]) -> Result<Vec<Reading>> {
     let collections = paths
         .iter()
         .map(|path| Hid::open(path, profile))
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<_>>>()
+        .context("open validated HID collections")?;
     match profile.model {
         Model::Logitech | Model::LogitechHeadset => {
             ensure!(
@@ -362,9 +364,8 @@ pub fn query(paths: &[String]) -> Result<Vec<Reading>> {
             );
             let mut hid = LogitechWire {
                 collections,
-                until: Instant::now() + Duration::from_millis(1250),
+                until: Instant::now() + HIDPP_BUDGET,
             };
-            let mut found = Vec::new();
             if profile.model == Model::LogitechHeadset {
                 return Ok(
                     protocol::logitech_headset(&mut hid, std::process::id() as u8)?
@@ -372,13 +373,7 @@ pub fn query(paths: &[String]) -> Result<Vec<Reading>> {
                         .collect(),
                 );
             }
-            for slot in 1..=profile.slots {
-                let nonce = (std::process::id() as u8).wrapping_add(slot);
-                if let Ok(Some(reading)) = protocol::logitech(&mut hid, slot, nonce) {
-                    found.push(reading);
-                }
-            }
-            Ok(found)
+            query_slots(&mut hid, profile.slots, std::process::id() as u8)
         }
         model => {
             ensure!(collections.len() == 1, "unexpected headset collections");
@@ -393,6 +388,28 @@ pub fn query(paths: &[String]) -> Result<Vec<Reading>> {
     }
 }
 
+fn query_slots(wire: &mut impl Wire, slots: u8, nonce: u8) -> Result<Vec<Reading>> {
+    let mut found = Vec::new();
+    let mut failure = None;
+    for slot in 1..=slots {
+        match protocol::logitech(wire, slot, nonce.wrapping_add(slot)) {
+            Ok(Some(reading)) => found.push(reading),
+            Ok(None) => {}
+            Err(error) => {
+                failure.get_or_insert_with(|| error.context(format!("HID++ slot {slot}")));
+            }
+        }
+    }
+    // Partial success is useful on a multi-slot receiver. A completely failed
+    // exchange must not be reported as a successful enumeration of zero devices.
+    if found.is_empty()
+        && let Some(error) = failure
+    {
+        return Err(error);
+    }
+    Ok(found)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -403,6 +420,98 @@ mod tests {
             ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_MESSAGE, PIPE_TYPE_MESSAGE, PIPE_WAIT,
         },
     };
+
+    struct Receiver {
+        fail: Option<u8>,
+        supported: bool,
+    }
+    impl Wire for Receiver {
+        fn exchange(&mut self, request: &[u8], matches: impl Fn(&[u8]) -> bool) -> Result<Vec<u8>> {
+            ensure!(self.fail != Some(request[1]), "simulated radio timeout");
+            let mut reply = request.to_vec();
+            reply[4..].fill(0);
+            match (request[2], request[3] >> 4) {
+                (0, 1) => reply[4..7].copy_from_slice(&[4, 0, request[6]]),
+                (0, 0) if request[4..6] == [0, 5] => reply[4] = if self.supported { 3 } else { 0 },
+                (3, 2) => reply[4] = 3,
+                (0, 0) if request[4..6] == [0x10, 0] => reply[4] = 5,
+                (5, 0) => reply[4..7].copy_from_slice(&[90, 50, 0]),
+                _ => {}
+            }
+            ensure!(matches(&reply), "fixture response mismatch");
+            Ok(reply)
+        }
+    }
+
+    #[test]
+    fn failed_receiver_is_not_empty_but_other_slots_can_still_succeed() -> Result<()> {
+        let mut receiver = Receiver {
+            fail: Some(1),
+            supported: true,
+        };
+        let error = query_slots(&mut receiver, 1, 23)
+            .err()
+            .context("timeout was swallowed")?;
+        assert!(format!("{error:#}").contains("simulated radio timeout"));
+        let readings = query_slots(&mut receiver, 2, 23)?;
+        assert_eq!(
+            readings,
+            vec![Reading {
+                slot: 2,
+                kind: muelle_shell::accessories::Kind::Mouse,
+                percent: Some(90)
+            }]
+        );
+        receiver.fail = None;
+        receiver.supported = false;
+        assert!(query_slots(&mut receiver, 1, 23)?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn g305_sequence_tolerates_slow_radio_replies_with_a_bounded_budget() -> Result<()> {
+        let (server, hid) = collection(20, "g305-delayed")?;
+        let mut wire = LogitechWire {
+            collections: vec![hid],
+            until: Instant::now() + HIDPP_BUDGET,
+        };
+        // The owning handle stays on this thread until the responder joins.
+        let server_handle = (*server).0 as isize;
+        let responder = std::thread::spawn(move || -> Result<()> {
+            let server = HANDLE(server_handle as *mut _);
+            let mut receiver = Receiver {
+                fail: None,
+                supported: true,
+            };
+            for _ in 0..6 {
+                let mut request = [0; 20];
+                unsafe {
+                    let mut count = 0;
+                    ReadFile(server, Some(&mut request), Some(&mut count), None)?;
+                    ensure!(count == 20, "incomplete fixture request");
+                }
+                // Each response fits the per-command bound, but the full G305
+                // discovery exceeds the former 1.25-second sequence budget.
+                std::thread::sleep(Duration::from_millis(240));
+                let response = receiver.exchange(&request, |_| true)?;
+                unsafe {
+                    let mut count = 0;
+                    WriteFile(server, Some(&response), Some(&mut count), None)?;
+                }
+            }
+            Ok(())
+        });
+        let result = query_slots(&mut wire, 1, 23);
+        drop(wire); // Unblock the fixture if the query failed early.
+        responder
+            .join()
+            .map_err(|_| anyhow::anyhow!("fixture thread panicked"))??;
+        assert_eq!(
+            result?.first().and_then(|reading| reading.percent),
+            Some(90)
+        );
+        Ok(())
+    }
 
     // Native overlapped I/O against local fixtures, never a real HID device.
     fn collection(size: usize, suffix: &str) -> Result<(Owned<HANDLE>, Hid)> {

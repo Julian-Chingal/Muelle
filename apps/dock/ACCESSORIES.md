@@ -47,9 +47,27 @@ los receptores USB tienen la política de consulta descrita más abajo.
 El padre limita cada operación a cinco segundos y cada mensaje a 64 KiB/32
 dispositivos. Quitar la barra termina el auxiliar sin `join` en la UI. Un Job
 Object con `KILL_ON_JOB_CLOSE` también lo termina si el dock falla. El lector
-revoca su espera antes de liberar el contexto. Reanudación y cambio de salida
-de audio reconstruyen las suscripciones; tras errores, el reloj ya existente
-permite reintentar como máximo una vez por minuto, sin temporizador nuevo.
+revoca su espera antes de liberar el contexto. La reanudación reconstruye el
+lector. Cambiar la salida de audio solo envía una señal al trabajador para
+actualizar los auriculares activos: conserva el mouse, su caché y los plazos USB.
+Cada watcher detenido se recupera por separado, como máximo una vez por minuto;
+los sanos continúan por eventos, sin un sondeo periódico adicional. Si falla todo
+el proceso, el reloj existente de la barra permite reiniciarlo.
+
+### Diagnóstico de ausencias intermitentes
+
+`%LOCALAPPDATA%\Muelle\muelle.log` registra el detector que falló o se recuperó,
+los vencimientos y la fase HID++ que no respondió. El proceso USB devuelve sus
+errores al coordinador en lugar de convertirlos en una lista vacía. Se identifica
+solo el VID:PID permitido; no se guardan rutas HID, números de serie, nombres ni
+paquetes del periférico. Los mensajes tienen un límite de 512 bytes, usan el log
+rotativo existente y se limitan a transiciones y fallos consecutivos 1, 2, 4, 8…128.
+No se escribe una línea en cada consulta correcta ni se añade un hilo de log al lector.
+
+Las pruebas cubren respuestas lentas del G305 mediante tuberías privadas,
+caducidad sin consultas, respuestas tardías, recuperación aislada de watchers y
+señales de audio. Sigue pendiente probar el G305 físico del usuario: las pruebas
+locales no certifican su radio ni la convivencia con G HUB.
 
 ## Adaptadores USB iniciales · 11c
 
@@ -149,19 +167,23 @@ carga, suspensión y convivencia con G HUB, GG y NGENUITY.
 - Una consulta inicial al detectar la interfaz y, como respaldo, cada 60 segundos
   mientras la barra esté visible. El receptor puede responder que el accesorio está
   apagado: también se limita a 60 segundos ese intento de descubrirlo.
-- Pausa mientras la barra esté auto-oculta o cubierta. Dos eventos de kernel comunican
-  visibilidad; no hay un timer de UI ni escrituras bloqueantes a una tubería.
+- Pausa mientras la barra esté auto-oculta o cubierta. Eventos de kernel comunican
+  visibilidad y cambios de salida de audio; no hay un timer de UI ni escrituras
+  bloqueantes a una tubería.
 - Cada consulta corre en otro `muelle.exe --accessory-usb-query`, con Job Object y
-  plazo de dos segundos. HID usa I/O overlapped, 150 ms por intercambio con auriculares,
-  400 ms por petición HID++ a través de receptor (la radio despierta antes al ratón;
-  el monitor de referencia usa 400 ms en su ping) y 1.250 ms para la secuencia. Si un controlador no cancela, solo se termina ese hijo;
-  el coordinador Bluetooth no espera la consulta.
-- Ante errores: la espera crece desde dos hasta quince minutos. Un auricular directo
-  que no responde se retira; un dispositivo tras receptor (slot 1–6) que no responde,
-  porque duerme o la consulta falló, conserva su última lectura 30 minutos, como el
-  monitor de referencia (`graceSec = 1800`). Quitar el receptor la borra al instante.
-  Los cambios de metadatos no reinician el plazo. Reanudación o cambio de salida de
-  audio reconstruyen el lector; no se registra la identidad del periférico en logs.
+  plazo de cuatro segundos, incluido el arranque. HID usa I/O overlapped, 150 ms
+  por intercambio con los otros auriculares; HID++ permite 600 ms por respuesta
+  y tres segundos para su secuencia completa de descubrimiento y batería.
+  Ampliar el presupuesto no repite comandos ni aumenta la frecuencia. Si un
+  controlador no cancela, solo se termina ese hijo; Bluetooth no espera la consulta.
+- Ante errores: la espera crece desde dos hasta quince minutos. Un error de
+  transporte conserva la última lectura del auricular directo hasta tres minutos;
+  una respuesta que confirma la desconexión la retira inmediatamente. Un dispositivo
+  tras receptor (slot 1–6) conserva su última lectura hasta 30 minutos cuando duerme
+  o falla la consulta. La caducidad se publica sin otra consulta, incluso estando
+  oculto. Quitar la última interfaz del receptor borra la lectura al instante.
+  Cambiar entre sus colecciones HID conserva el dato y su plazo, e invalida
+  respuestas pendientes de la generación anterior.
 
 El intervalo de 60 segundos sustituye al inicial de cinco minutos. En operación
 normal, por interfaz visible, pasa de unas 12 a unas 60 consultas por hora
@@ -173,7 +195,7 @@ de memoria de cada proceso temporal.
 Sin receptor identificado o con la barra oculta no hay consultas USB adicionales.
 El coste real con un receptor sigue pendiente de medición: incluye creación del
 proceso, trabajo de sus controladores y posible actividad del periférico. El
-timeout de dos segundos es tiempo de pared; no equivale a dos segundos de CPU.
+timeout de cuatro segundos es tiempo de pared; no equivale a cuatro segundos de CPU.
 
 **Límite funcional:** desenchufar el USB se detecta por eventos. Encender/apagar el
 accesorio dejando el receptor puesto puede reflejarse hasta la siguiente consulta

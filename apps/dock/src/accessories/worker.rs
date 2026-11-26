@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use muelle_shell::accessories::{Endpoint, Kind, Snapshot, State, assemble};
 use windows::{
     Devices::Enumeration::{
@@ -33,20 +33,26 @@ const CATEGORY: &str = "System.Devices.Aep.Category";
 const AEP: &str = "(System.Devices.Aep.ProtocolId:=\"{e0cbf06c-cd8b-4647-bb8a-263b43f0f974}\" OR System.Devices.Aep.ProtocolId:=\"{bb7bb05e-5972-42b5-94fc-76eaa7084d49}\") AND System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True";
 const NODES: &str = "System.Devices.ClassGuid:=\"{e0cbf06c-cd8b-4647-bb8a-263b43f0f974}\" OR System.Devices.ClassGuid:=\"{745a17a0-74d3-11d0-b6fe-00a0c90f57da}\" OR System.Devices.ClassGuid:=\"{4d36e96c-e325-11ce-bfc1-08002be10318}\"";
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Source {
     Endpoint,
     Node,
     Usb,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct Origin {
+    source: Source,
+    generation: u64,
+}
 pub(super) enum Event {
-    Add(Source, DeviceInformation),
-    Update(Source, DeviceInformationUpdate),
-    Remove(Source, DeviceInformationUpdate),
-    Complete(Source),
+    Add(Origin, DeviceInformation),
+    Update(Origin, DeviceInformationUpdate),
+    Remove(Origin, DeviceInformationUpdate),
+    Complete(Origin),
     Usb(usb::Completed),
     Visibility,
-    Stopped(Source),
+    AudioChanged,
+    Stopped(Origin),
 }
 enum Subscription {
     Add(i64),
@@ -56,8 +62,96 @@ enum Subscription {
     Stop(i64),
 }
 struct Watch {
+    origin: Origin,
     watcher: DeviceWatcher,
     tokens: Vec<Subscription>,
+}
+
+const SOURCES: [Source; 3] = [Source::Endpoint, Source::Node, Source::Usb];
+const RECOVERY_DELAY: Duration = Duration::from_secs(60);
+
+/// Only failed sources have a retry deadline. Healthy discovery remains purely
+/// event-driven, and replacing a watcher invalidates its queued callbacks.
+struct Discovery {
+    watches: [Option<Watch>; 3],
+    retry_at: [Option<Instant>; 3],
+    failed: [bool; 3],
+    generation: u64,
+}
+impl Discovery {
+    fn new() -> Self {
+        Self {
+            watches: std::array::from_fn(|_| None),
+            retry_at: [Some(Instant::now()); 3],
+            failed: [false; 3],
+            generation: 0,
+        }
+    }
+    fn deadline(&self) -> Option<Instant> {
+        self.retry_at.iter().flatten().copied().min()
+    }
+    fn retry(&mut self, tx: &SyncSender<Event>, full: &Arc<AtomicBool>) -> Result<()> {
+        for source in SOURCES {
+            let index = source as usize;
+            if self.retry_at[index].is_none_or(|at| at > Instant::now()) {
+                continue;
+            }
+            self.generation = self.generation.wrapping_add(1);
+            match watch(source, self.generation, tx.clone(), full.clone()) {
+                Ok(watch) => {
+                    self.watches[index] = Some(watch);
+                    self.retry_at[index] = None;
+                    if self.failed[index] {
+                        emit(&Frame::Diagnostic(format!(
+                            "{source:?} discovery recovered"
+                        )))?;
+                    }
+                    self.failed[index] = false;
+                }
+                Err(error) => {
+                    self.retry_at[index] = Some(Instant::now() + RECOVERY_DELAY);
+                    if !self.failed[index] {
+                        emit(&Frame::Diagnostic(super::diagnostic(&format!(
+                            "{source:?} discovery unavailable: {error:#}"
+                        ))))?;
+                    }
+                    self.failed[index] = true;
+                }
+            }
+        }
+        ensure!(
+            self.watches.iter().any(Option::is_some),
+            "all accessory discovery sources unavailable"
+        );
+        Ok(())
+    }
+    fn accepts(&self, event: &Event) -> bool {
+        match event {
+            Event::Add(origin, _)
+            | Event::Update(origin, _)
+            | Event::Remove(origin, _)
+            | Event::Complete(origin)
+            | Event::Stopped(origin) => self.watches[origin.source as usize]
+                .as_ref()
+                .is_some_and(|watch| watch.origin == *origin),
+            _ => true,
+        }
+    }
+    fn stopped(&mut self, origin: Origin) -> Result<()> {
+        let index = origin.source as usize;
+        self.watches[index] = None;
+        self.retry_at[index] = Some(Instant::now() + RECOVERY_DELAY);
+        self.failed[index] = true;
+        emit(&Frame::Diagnostic(format!(
+            "{:?} discovery stopped; retry in 60 s",
+            origin.source
+        )))?;
+        ensure!(
+            self.watches.iter().any(Option::is_some),
+            "all accessory discovery sources stopped"
+        );
+        Ok(())
+    }
 }
 impl Drop for Watch {
     fn drop(&mut self) {
@@ -80,7 +174,13 @@ fn send(tx: &SyncSender<Event>, full: &AtomicBool, event: Event) {
     }
 }
 
-fn watch(source: Source, tx: SyncSender<Event>, full: Arc<AtomicBool>) -> Result<Watch> {
+fn watch(
+    source: Source,
+    generation: u64,
+    tx: SyncSender<Event>,
+    full: Arc<AtomicBool>,
+) -> Result<Watch> {
+    let origin = Origin { source, generation };
     let props: IIterable<HSTRING> = match source {
         Source::Endpoint => vec![AEP_CONTAINER, CONNECTED, CATEGORY],
         Source::Node => vec![CONTAINER, BATTERY],
@@ -104,6 +204,7 @@ fn watch(source: Source, tx: SyncSender<Event>, full: Arc<AtomicBool>) -> Result
         },
     )?;
     let mut watch = Watch {
+        origin,
         watcher,
         tokens: Vec::with_capacity(5),
     };
@@ -111,7 +212,7 @@ fn watch(source: Source, tx: SyncSender<Event>, full: Arc<AtomicBool>) -> Result
     watch.tokens.push(Subscription::Add(watch.watcher.Added(
         &TypedEventHandler::new(move |_, arg: windows::core::Ref<DeviceInformation>| {
             if let Some(info) = arg.as_ref() {
-                send(&sender, &overflow, Event::Add(source, info.clone()));
+                send(&sender, &overflow, Event::Add(origin, info.clone()));
             }
             Ok(())
         }),
@@ -122,7 +223,7 @@ fn watch(source: Source, tx: SyncSender<Event>, full: Arc<AtomicBool>) -> Result
         .push(Subscription::Update(watch.watcher.Updated(
             &TypedEventHandler::new(move |_, arg: windows::core::Ref<DeviceInformationUpdate>| {
                 if let Some(info) = arg.as_ref() {
-                    send(&sender, &overflow, Event::Update(source, info.clone()));
+                    send(&sender, &overflow, Event::Update(origin, info.clone()));
                 }
                 Ok(())
             }),
@@ -133,7 +234,7 @@ fn watch(source: Source, tx: SyncSender<Event>, full: Arc<AtomicBool>) -> Result
         .push(Subscription::Remove(watch.watcher.Removed(
             &TypedEventHandler::new(move |_, arg: windows::core::Ref<DeviceInformationUpdate>| {
                 if let Some(info) = arg.as_ref() {
-                    send(&sender, &overflow, Event::Remove(source, info.clone()));
+                    send(&sender, &overflow, Event::Remove(origin, info.clone()));
                 }
                 Ok(())
             }),
@@ -143,13 +244,13 @@ fn watch(source: Source, tx: SyncSender<Event>, full: Arc<AtomicBool>) -> Result
         .tokens
         .push(Subscription::Complete(watch.watcher.EnumerationCompleted(
             &TypedEventHandler::new(move |_, _| {
-                send(&sender, &overflow, Event::Complete(source));
+                send(&sender, &overflow, Event::Complete(origin));
                 Ok(())
             }),
         )?));
     watch.tokens.push(Subscription::Stop(watch.watcher.Stopped(
         &TypedEventHandler::new(move |_, _| {
-            send(&tx, &full, Event::Stopped(source));
+            send(&tx, &full, Event::Stopped(origin));
             Ok(())
         }),
     )?));
@@ -202,8 +303,10 @@ fn snapshot(
         };
         let id = container(info, AEP_CONTAINER)
             .unwrap_or_else(|| info.Id().map(|id| id.to_string()).unwrap_or_default());
-        let name: String = info
-            .Name()?
+        let Ok(name) = info.Name() else {
+            continue;
+        };
+        let name: String = name
             .to_string()
             .chars()
             .filter(|c| !c.is_control())
@@ -234,7 +337,7 @@ fn snapshot(
     }
     devices.sort_by(|a, b| (a.kind, &a.id).cmp(&(b.kind, &b.id)));
     devices.truncate(muelle_shell::accessories::MAX_DEVICES);
-    if !devices.is_empty()
+    if devices.iter().any(|device| device.kind == Kind::Headset)
         && let Some(active) = muelle_shell::status::default_audio_container()
     {
         for device in &mut devices {
@@ -276,14 +379,9 @@ pub fn run(visibility: Option<&str>) -> Result<()> {
     let visibility = visibility
         .map(|name| visibility::Watch::new(name, tx.clone(), full.clone()))
         .transpose()?;
-    let _aep = watch(Source::Endpoint, tx.clone(), full.clone())?;
-    let _nodes = watch(Source::Node, tx.clone(), full.clone())?;
-    let _usb = watch(Source::Usb, tx.clone(), full.clone())
-        .inspect_err(|_| eprintln!("muelle: USB accessory discovery unavailable"))
-        .ok();
+    let mut discovery = Discovery::new();
     let mut usb = usb::Sources::default();
     let (mut endpoints, mut nodes) = (BTreeMap::new(), BTreeMap::new());
-    let mut complete = [false; 3];
     let mut deadline = Some(Instant::now() + Duration::from_millis(120));
     let mut busy = true;
     let mut last: Option<Snapshot> = None;
@@ -292,6 +390,17 @@ pub fn run(visibility: Option<&str>) -> Result<()> {
             !full.load(Ordering::Acquire),
             "accessory event queue overflow"
         );
+        if discovery.deadline().is_some_and(|at| at <= Instant::now()) {
+            if !busy {
+                emit(&Frame::Busy)?;
+                busy = true;
+            }
+            discovery.retry(&tx, &full)?;
+            deadline.get_or_insert_with(|| Instant::now() + Duration::from_millis(120));
+        }
+        if usb.expire() {
+            deadline.get_or_insert_with(|| Instant::now() + Duration::from_millis(120));
+        }
         let active = visibility.as_ref().is_none_or(visibility::Watch::active);
         if active {
             usb.schedule(&tx, &full)?;
@@ -299,6 +408,8 @@ pub fn run(visibility: Option<&str>) -> Result<()> {
         let wake = deadline
             .into_iter()
             .chain(active.then(|| usb.deadline()).flatten())
+            .chain(usb.expiry_deadline())
+            .chain(discovery.deadline())
             .min();
         let event = if let Some(at) = wake {
             match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
@@ -314,20 +425,22 @@ pub fn run(visibility: Option<&str>) -> Result<()> {
                 continue;
             }
             deadline = None;
-            // Optional USB discovery must not delay the established Bluetooth source.
-            if complete[..2].iter().all(|done| *done) {
-                let mut current = snapshot(&endpoints, &nodes, &usb)?;
-                if let Some(previous) = &last
-                    && current.devices == previous.devices
-                {
-                    current.received_at = previous.received_at;
-                }
-                emit(&Frame::Ready(current.clone()))?;
-                last = Some(current);
-                busy = false;
+            // Publish healthy sources independently; an unavailable Bluetooth
+            // enumerator must never suppress a valid USB mouse reading.
+            let mut current = snapshot(&endpoints, &nodes, &usb)?;
+            if let Some(previous) = &last
+                && current.devices == previous.devices
+            {
+                current.received_at = previous.received_at;
             }
+            emit(&Frame::Ready(current.clone()))?;
+            last = Some(current);
+            busy = false;
             continue;
         };
+        if !discovery.accepts(&event) {
+            continue;
+        }
         if matches!(event, Event::Visibility) {
             continue;
         }
@@ -337,19 +450,41 @@ pub fn run(visibility: Option<&str>) -> Result<()> {
         }
         deadline.get_or_insert_with(|| Instant::now() + Duration::from_millis(120));
         match event {
-            Event::Visibility => {}
-            Event::Add(Source::Usb, info) => {
+            Event::Visibility | Event::AudioChanged => {}
+            Event::Add(
+                Origin {
+                    source: Source::Usb,
+                    ..
+                },
+                info,
+            ) => {
                 let path = info.Id()?.to_string();
                 let id = container(&info, CONTAINER).unwrap_or_else(|| path.clone());
                 if id.len() <= 500 {
                     usb.add(path, id);
                 }
             }
-            Event::Update(Source::Usb, _) => {}
-            Event::Remove(Source::Usb, info) => usb.remove(&info.Id()?.to_string()),
-            Event::Usb(result) => usb.complete(result),
+            Event::Update(
+                Origin {
+                    source: Source::Usb,
+                    ..
+                },
+                _,
+            ) => {}
+            Event::Remove(
+                Origin {
+                    source: Source::Usb,
+                    ..
+                },
+                info,
+            ) => usb.remove(&info.Id()?.to_string()),
+            Event::Usb(result) => {
+                if let Some(message) = usb.complete(result) {
+                    emit(&Frame::Diagnostic(super::diagnostic(&message)))?;
+                }
+            }
             Event::Add(aep, info) => {
-                let target = if aep == Source::Endpoint {
+                let target = if aep.source == Source::Endpoint {
                     &mut endpoints
                 } else {
                     &mut nodes
@@ -358,7 +493,7 @@ pub fn run(visibility: Option<&str>) -> Result<()> {
                 ensure!(target.len() <= 512, "accessory cache exceeded its limit");
             }
             Event::Update(aep, update) => {
-                if let Some(info) = (if aep == Source::Endpoint {
+                if let Some(info) = (if aep.source == Source::Endpoint {
                     &endpoints
                 } else {
                     &nodes
@@ -369,16 +504,22 @@ pub fn run(visibility: Option<&str>) -> Result<()> {
                 }
             }
             Event::Remove(aep, update) => {
-                (if aep == Source::Endpoint {
+                (if aep.source == Source::Endpoint {
                     &mut endpoints
                 } else {
                     &mut nodes
                 })
                 .remove(&update.Id()?.to_string());
             }
-            Event::Complete(source) => complete[source as usize] = true,
-            Event::Stopped(Source::Usb) => usb = usb::Sources::default(),
-            Event::Stopped(_) => bail!("accessory watcher stopped"),
+            Event::Complete(_) => {}
+            Event::Stopped(origin) => {
+                discovery.stopped(origin)?;
+                match origin.source {
+                    Source::Endpoint => endpoints.clear(),
+                    Source::Node => nodes.clear(),
+                    Source::Usb => usb.clear(),
+                }
+            }
         }
     }
 }
@@ -386,6 +527,68 @@ pub fn run(visibility: Option<&str>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "Own metadata watchers only; never opens HID data handles"]
+    fn accessory_discovery_recovers_only_the_stopped_source() -> Result<()> {
+        unsafe {
+            RoInitialize(RO_INIT_MULTITHREADED)?;
+        }
+        let _apartment = Apartment;
+        let (tx, rx) = mpsc::sync_channel(256);
+        let full = Arc::new(AtomicBool::new(false));
+        let mut discovery = Discovery::new();
+        discovery.retry(&tx, &full)?;
+        let origins: Vec<_> = discovery
+            .watches
+            .iter()
+            .map(|watch| watch.as_ref().map(|w| w.origin))
+            .collect();
+        let usb = discovery.watches[Source::Usb as usize]
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("USB metadata watcher unavailable"))?;
+        let old = usb.origin;
+        usb.watcher.Stop()?;
+        let end = Instant::now() + Duration::from_secs(5);
+        loop {
+            let event = rx.recv_timeout(end.saturating_duration_since(Instant::now()))?;
+            if let Event::Stopped(origin) = event
+                && origin == old
+            {
+                discovery.stopped(origin)?;
+                break;
+            }
+        }
+        assert!(!discovery.accepts(&Event::Complete(old)));
+        assert!(
+            discovery
+                .deadline()
+                .is_some_and(|at| at > Instant::now() + Duration::from_secs(59))
+        );
+        // Move only the test's recovery deadline; production waits one minute.
+        discovery.retry_at[Source::Usb as usize] = Some(Instant::now());
+        discovery.retry(&tx, &full)?;
+        assert!(!discovery.accepts(&Event::Complete(old)));
+        let current = discovery.watches[Source::Usb as usize]
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("USB watcher did not recover"))?
+            .origin;
+        assert!(discovery.accepts(&Event::Complete(current)));
+        for source in [Source::Endpoint, Source::Node] {
+            assert!(
+                discovery.watches[source as usize]
+                    .as_ref()
+                    .map(|w| w.origin)
+                    == origins[source as usize]
+            );
+        }
+        assert!(discovery.deadline().is_none());
+        ensure!(
+            !full.load(Ordering::Acquire),
+            "discovery fixture queue overflow"
+        );
+        Ok(())
+    }
 
     #[test]
     #[ignore = "Enumerates allowlisted Windows USB metadata; never sends HID queries"]
@@ -397,12 +600,15 @@ mod tests {
         let _apartment = Apartment;
         let (tx, rx) = mpsc::sync_channel(256);
         let full = Arc::new(AtomicBool::new(false));
-        let _watch = watch(Source::Usb, tx, full.clone())?;
+        let _watch = watch(Source::Usb, 1, tx, full.clone())?;
         let end = Instant::now() + Duration::from_secs(5);
         loop {
             match rx.recv_timeout(end.saturating_duration_since(Instant::now()))? {
-                Event::Complete(Source::Usb) => break,
-                Event::Stopped(_) => bail!("USB discovery stopped before completing"),
+                Event::Complete(Origin {
+                    source: Source::Usb,
+                    ..
+                }) => break,
+                Event::Stopped(_) => anyhow::bail!("USB discovery stopped before completing"),
                 _ => {}
             }
         }

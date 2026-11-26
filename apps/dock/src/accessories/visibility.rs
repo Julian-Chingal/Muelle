@@ -22,6 +22,7 @@ use windows::{
 pub struct Controller {
     active: isize,
     changed: isize,
+    audio: isize,
     pub name: String,
     visible: AtomicBool,
 }
@@ -37,6 +38,7 @@ impl Controller {
             let mut owner = Self {
                 active: CreateEventW(None, true, visible, &HSTRING::from(&name))?.0 as isize,
                 changed: 0,
+                audio: 0,
                 name,
                 visible: AtomicBool::new(visible),
             };
@@ -45,6 +47,13 @@ impl Controller {
                 false,
                 false,
                 &HSTRING::from(format!("{}.Changed", owner.name)),
+            )?
+            .0 as isize;
+            owner.audio = CreateEventW(
+                None,
+                false,
+                false,
+                &HSTRING::from(format!("{}.Audio", owner.name)),
             )?
             .0 as isize;
             Ok(owner)
@@ -65,11 +74,17 @@ impl Controller {
             let _ = SetEvent(HANDLE(self.changed as *mut _));
         }
     }
+    pub fn audio_changed(&self) {
+        // Auto-reset coalesces pending route changes; no UI pipe IO or wait.
+        unsafe {
+            let _ = SetEvent(HANDLE(self.audio as *mut _));
+        }
+    }
 }
 impl Drop for Controller {
     fn drop(&mut self) {
         unsafe {
-            for handle in [self.active, self.changed] {
+            for handle in [self.active, self.changed, self.audio] {
                 if handle != 0 {
                     let _ = CloseHandle(HANDLE(handle as *mut _));
                 }
@@ -81,12 +96,42 @@ impl Drop for Controller {
 struct Signal {
     tx: SyncSender<Event>,
     full: Arc<AtomicBool>,
+    audio: bool,
 }
 pub struct Watch {
     active: Owned<HANDLE>,
-    _changed: Owned<HANDLE>,
+    _signals: [Registration; 2],
+}
+struct Registration {
+    _event: Owned<HANDLE>,
     wait: HANDLE,
     _signal: Arc<Signal>,
+}
+impl Registration {
+    fn new(name: &str, tx: SyncSender<Event>, full: Arc<AtomicBool>, audio: bool) -> Result<Self> {
+        unsafe {
+            let event = Owned::new(OpenEventW(
+                SYNCHRONIZATION_SYNCHRONIZE,
+                false,
+                &HSTRING::from(name),
+            )?);
+            let signal = Arc::new(Signal { tx, full, audio });
+            let mut wait = HANDLE::default();
+            RegisterWaitForSingleObject(
+                &mut wait,
+                *event,
+                Some(notify),
+                Some(Arc::as_ptr(&signal).cast()),
+                u32::MAX,
+                WT_EXECUTEDEFAULT,
+            )?;
+            Ok(Self {
+                _event: event,
+                wait,
+                _signal: signal,
+            })
+        }
+    }
 }
 impl Watch {
     pub fn new(name: &str, tx: SyncSender<Event>, full: Arc<AtomicBool>) -> Result<Self> {
@@ -105,26 +150,12 @@ impl Watch {
                 false,
                 &HSTRING::from(name),
             )?);
-            let changed = Owned::new(OpenEventW(
-                SYNCHRONIZATION_SYNCHRONIZE,
-                false,
-                &HSTRING::from(format!("{name}.Changed")),
-            )?);
-            let signal = Arc::new(Signal { tx, full });
-            let mut wait = HANDLE::default();
-            RegisterWaitForSingleObject(
-                &mut wait,
-                *changed,
-                Some(notify),
-                Some(Arc::as_ptr(&signal).cast()),
-                u32::MAX,
-                WT_EXECUTEDEFAULT,
-            )?;
             Ok(Self {
                 active,
-                _changed: changed,
-                wait,
-                _signal: signal,
+                _signals: [
+                    Registration::new(&format!("{name}.Changed"), tx.clone(), full.clone(), false)?,
+                    Registration::new(&format!("{name}.Audio"), tx, full, true)?,
+                ],
             })
         }
     }
@@ -132,7 +163,7 @@ impl Watch {
         unsafe { WaitForSingleObject(*self.active, 0) == WAIT_OBJECT_0 }
     }
 }
-impl Drop for Watch {
+impl Drop for Registration {
     fn drop(&mut self) {
         unsafe {
             let _ = UnregisterWaitEx(self.wait, Some(INVALID_HANDLE_VALUE));
@@ -142,7 +173,15 @@ impl Drop for Watch {
 unsafe extern "system" fn notify(context: *mut std::ffi::c_void, _: bool) {
     // Context and both events outlive registration; Drop synchronizes callbacks.
     let signal = unsafe { &*context.cast::<Signal>() };
-    if signal.tx.try_send(Event::Visibility).is_err() {
+    let event = if signal.audio {
+        Event::AudioChanged
+    } else {
+        Event::Visibility
+    };
+    if matches!(
+        signal.tx.try_send(event),
+        Err(std::sync::mpsc::TrySendError::Full(_))
+    ) {
         signal.full.store(true, Ordering::Release);
     }
 }
@@ -170,6 +209,13 @@ mod tests {
             Event::Visibility
         ));
         assert!(!watch.active());
+        control.audio_changed();
+        assert!(matches!(
+            rx.recv_timeout(std::time::Duration::from_secs(1))?,
+            Event::AudioChanged
+        ));
+        assert!(!watch.active(), "audio routing must not change visibility");
+        assert!(rx.try_recv().is_err());
         Ok(())
     }
 }

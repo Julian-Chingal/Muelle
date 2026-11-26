@@ -297,6 +297,20 @@ fn native_profile_shortcuts_keep_their_identity_after_the_source_is_removed()
         TEMPORARY.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&folder)?;
+    // GitHub's TEMP may contain RUNNER~1. IShellLink::GetPath returns the
+    // expanded target, as a running browser does. Prepare the same spelling
+    // before deriving the expected ID; keep all identity assertions exact.
+    let mut expanded = vec![0u16; MAX_TEXT];
+    let count = unsafe {
+        windows::Win32::Storage::FileSystem::GetLongPathNameW(
+            &HSTRING::from(folder.as_os_str()),
+            Some(&mut expanded),
+        )
+    } as usize;
+    if count == 0 || count >= expanded.len() {
+        return Err("shortcut fixture's long path unavailable".into());
+    }
+    let folder = PathBuf::from(String::from_utf16(&expanded[..count])?);
     // Empty fixture is never executed; only its path's existence is checked.
     let executable = folder.join("chrome.exe");
     fs::write(&executable, [])?;

@@ -94,3 +94,16 @@ fn worker_protocol_rejects_unrecognized_events_and_truncated_payloads() {
             .is_err()
     );
 }
+
+#[test]
+fn diagnostics_are_single_line_bounded_and_utf8_safe() -> Result<()> {
+    let text = diagnostic(&format!("HID++ timeout\n\r\0{}", "é".repeat(600)));
+    assert!(text.starts_with("HID++ timeout"));
+    assert!(text.len() <= 512);
+    assert!(!text.chars().any(char::is_control));
+    let json = serde_json::to_string(&Frame::Failed(text.clone()))?;
+    assert!(
+        matches!(serde_json::from_str::<Frame>(&json)?, Frame::Failed(message) if message == text)
+    );
+    Ok(())
+}

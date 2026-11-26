@@ -37,6 +37,9 @@ const LIMIT: usize = 8;
 /// (`graceSec = 1800` for receiver devices), so the indicator does not come
 /// and go with every query. Unplugging the receiver still clears it at once.
 const RECEIVER_GRACE: Duration = Duration::from_secs(30 * 60);
+// A transport error is not proof that a directly attached headset disconnected.
+// A successful protocol-level disconnected result still clears it immediately.
+const TRANSPORT_GRACE: Duration = Duration::from_secs(180);
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Request {
@@ -48,7 +51,8 @@ pub fn query_main() -> Result<()> {
     std::io::stdin().take(4097).read_to_string(&mut input)?;
     ensure!(input.len() <= 4096, "USB request too large");
     let request: Request = serde_json::from_str(&input)?;
-    let readings = io::query(&request.paths)?;
+    let readings =
+        io::query(&request.paths).map_err(|error| super::diagnostic(&format!("{error:#}")));
     serde_json::to_writer(std::io::stdout().lock(), &readings)?;
     Ok(())
 }
@@ -106,7 +110,7 @@ fn probe(paths: &[String]) -> Result<Vec<Reading>> {
             return Err(error.into());
         }
     }
-    query_child(&mut child, paths, 2000)
+    query_child(&mut child, paths, 4000)
 }
 
 fn query_child(child: &mut Child, paths: &[String], timeout: u32) -> Result<Vec<Reading>> {
@@ -131,8 +135,14 @@ fn query_child(child: &mut Child, paths: &[String], timeout: u32) -> Result<Vec<
         .context("USB output unavailable")?
         .take(4097)
         .read_to_end(&mut output)?;
+    decode_response(&output, paths)
+}
+
+fn decode_response(output: &[u8], paths: &[String]) -> Result<Vec<Reading>> {
     ensure!(output.len() <= 4096, "USB output too large");
-    let readings: Vec<Reading> = serde_json::from_slice(&output)?;
+    let readings: std::result::Result<Vec<Reading>, String> = serde_json::from_slice(output)?;
+    let readings =
+        readings.map_err(|error| anyhow::anyhow!("USB query: {}", super::diagnostic(&error)))?;
     let profile = paths
         .first()
         .and_then(|path| protocol::profile_path(path))
@@ -196,8 +206,9 @@ impl Sources {
             self.generation = self.generation.wrapping_add(1);
             entry.paths.insert(path);
             entry.generation = self.generation;
-            entry.devices.clear();
-            entry.next = Instant::now();
+            if entry.devices.is_empty() {
+                entry.next = Instant::now();
+            }
             return;
         }
         if self.entries.len() >= LIMIT {
@@ -226,8 +237,9 @@ impl Sources {
             } else {
                 self.generation = self.generation.wrapping_add(1);
                 entry.generation = self.generation;
-                entry.devices.clear();
-                entry.next = Instant::now();
+                if entry.devices.is_empty() {
+                    entry.next = Instant::now();
+                }
             }
         }
         if self.entries.is_empty() && self.in_flight.is_none() {
@@ -293,7 +305,46 @@ impl Sources {
             self.entries.values().map(|entry| entry.next).min()
         }
     }
-    pub fn complete(&mut self, response: Completed) {
+    pub fn expiry_deadline(&self) -> Option<Instant> {
+        self.entries
+            .values()
+            .flat_map(|entry| &entry.devices)
+            .map(|held| {
+                held.seen
+                    + if held.slot == 0 {
+                        TRANSPORT_GRACE
+                    } else {
+                        RECEIVER_GRACE
+                    }
+            })
+            .min()
+    }
+    pub fn expire(&mut self) -> bool {
+        let now = Instant::now();
+        let mut changed = false;
+        for entry in self.entries.values_mut() {
+            let before = entry.devices.len();
+            entry.devices.retain(|held| {
+                now.saturating_duration_since(held.seen)
+                    < if held.slot == 0 {
+                        TRANSPORT_GRACE
+                    } else {
+                        RECEIVER_GRACE
+                    }
+            });
+            changed |= before != entry.devices.len();
+        }
+        changed
+    }
+    pub fn clear(&mut self) {
+        // Keep the sequence and in-flight operation: an old result must neither
+        // alias a rediscovered receiver nor let two probes run simultaneously.
+        self.entries.clear();
+        if self.in_flight.is_none() {
+            self.pool = None;
+        }
+    }
+    pub fn complete(&mut self, response: Completed) -> Option<String> {
         if self.in_flight.as_ref().is_some_and(|(path, generation)| {
             *path == response.path && *generation == response.generation
         }) {
@@ -302,17 +353,19 @@ impl Sources {
         if self.entries.is_empty() && self.in_flight.is_none() {
             self.pool = None;
         }
-        let Some(entry) = self
+        let entry = self
             .entries
             .get_mut(&response.path)
-            .filter(|entry| entry.generation == response.generation)
-        else {
-            return;
-        };
+            .filter(|entry| entry.generation == response.generation)?;
         let now = Instant::now();
         let previous = std::mem::take(&mut entry.devices);
+        let failed = response.result.is_err();
+        let mut diagnostic = None;
         match response.result {
             Ok(readings) => {
+                if entry.failures != 0 {
+                    diagnostic = Some("USB accessory query recovered".into());
+                }
                 entry.failures = 0;
                 entry.devices = readings
                     .into_iter()
@@ -338,20 +391,37 @@ impl Sources {
                     })
                     .collect();
             }
-            Err(_) => entry.failures = entry.failures.saturating_add(1),
+            Err(error) => {
+                entry.failures = entry.failures.saturating_add(1);
+                // At most 1, 2, 4, ... 128 consecutive failures are logged.
+                if entry.failures.is_power_of_two() {
+                    let model = protocol::profile_path(&response.path)
+                        .map(|profile| format!(" {:04X}:{:04X}", profile.vendor, profile.product))
+                        .unwrap_or_default();
+                    diagnostic = Some(format!(
+                        "USB accessory{model} query failed (attempt {}): {error:#}",
+                        entry.failures
+                    ));
+                }
+            }
         }
-        // Receiver slots that did not answer this time (asleep, or a query
-        // that failed) keep their last reading for a while. Slot 0 is a
-        // headset on its own cable or dongle: silent means gone.
+        // Receiver slots may sleep. Direct headsets retain a reading only after
+        // transport failure, never after an explicit disconnected response.
         for held in previous {
-            if held.slot != 0
-                && now.saturating_duration_since(held.seen) < RECEIVER_GRACE
+            let grace = if held.slot != 0 {
+                RECEIVER_GRACE
+            } else {
+                TRANSPORT_GRACE
+            };
+            if (held.slot != 0 || failed)
+                && now.saturating_duration_since(held.seen) < grace
                 && !entry.devices.iter().any(|fresh| fresh.slot == held.slot)
             {
                 entry.devices.push(held);
             }
         }
         entry.next = now + retry_delay(entry.failures);
+        diagnostic
     }
     pub fn devices(&self) -> impl Iterator<Item = &Device> {
         self.entries
@@ -370,6 +440,162 @@ fn retry_delay(failures: u8) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn usb_ipc_preserves_failure_reasons_and_validates_successful_readings() -> Result<()> {
+        let paths = [r"\\?\hid#vid_046d&pid_c53f&mi_02#instance".into()];
+        let encode =
+            |result: std::result::Result<Vec<Reading>, String>| serde_json::to_vec(&result);
+        let failure = encode(Err("HID++ ping: read timed out".into()))?;
+        let error = decode_response(&failure, &paths)
+            .err()
+            .context("failure decoded as success")?;
+        assert!(error.to_string().contains("HID++ ping: read timed out"));
+        assert!(decode_response(&encode(Ok(Vec::new()))?, &paths)?.is_empty());
+        let reading = Reading {
+            slot: 1,
+            kind: Kind::Mouse,
+            percent: Some(90),
+        };
+        assert_eq!(
+            decode_response(&encode(Ok(vec![reading.clone()]))?, &paths)?,
+            vec![reading.clone()]
+        );
+        assert!(
+            decode_response(&encode(Ok(vec![reading.clone(), reading.clone()]))?, &paths).is_err()
+        );
+        assert!(
+            decode_response(
+                &encode(Ok(vec![Reading {
+                    percent: Some(101),
+                    ..reading
+                }]))?,
+                &paths
+            )
+            .is_err()
+        );
+        assert!(decode_response(br#"[{"slot":1,"kind":"mouse","percent":90}]"#, &paths).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn headset_errors_expire_without_extra_queries_but_disconnect_clears_immediately() {
+        let path = r"\\?\hid#vid_1038&pid_22a1&mi_03#instance";
+        let mut sources = Sources::default();
+        sources.add(path.into(), "headset".into());
+        let generation = sources.entries[path].generation;
+        let done = |result| Completed {
+            path: path.into(),
+            generation,
+            result,
+        };
+        let reading = Reading {
+            slot: 0,
+            kind: Kind::Headset,
+            percent: Some(65),
+        };
+        assert!(sources.complete(done(Ok(vec![reading.clone()]))).is_none());
+        let first = sources.complete(done(Err(anyhow::anyhow!("read timed out"))));
+        assert!(first.is_some_and(|message| message.contains("read timed out")));
+        assert_eq!(sources.devices().next().and_then(|d| d.percent), Some(65));
+        if let Some(entry) = sources.entries.get_mut(path) {
+            entry.devices[0].seen -= TRANSPORT_GRACE;
+        }
+        let next = sources.deadline();
+        assert!(sources.expire());
+        assert_eq!(sources.devices().count(), 0);
+        assert_eq!(
+            sources.deadline(),
+            next,
+            "expiry must not request a new query"
+        );
+        assert!(sources.complete(done(Ok(vec![reading]))).is_some());
+        assert!(sources.complete(done(Ok(Vec::new()))).is_none());
+        assert_eq!(sources.devices().count(), 0);
+    }
+
+    #[test]
+    fn watcher_recovery_rejects_old_results_and_keeps_one_probe_in_flight() {
+        let path = r"\\?\hid#vid_046d&pid_c53f&mi_02#instance";
+        let mut sources = Sources::default();
+        sources.add(path.into(), "g305".into());
+        let generation = sources.entries[path].generation;
+        sources.in_flight = Some((path.into(), generation));
+        sources.clear();
+        sources.add(path.into(), "g305".into());
+        assert!(sources.in_flight.is_some());
+        assert!(sources.deadline().is_none());
+        let _ = sources.complete(Completed {
+            path: path.into(),
+            generation,
+            result: Ok(vec![Reading {
+                slot: 1,
+                kind: Kind::Mouse,
+                percent: Some(90),
+            }]),
+        });
+        assert!(sources.in_flight.is_none());
+        assert!(sources.deadline().is_some());
+        assert_eq!(sources.devices().count(), 0);
+    }
+
+    #[test]
+    fn changing_receiver_collection_keeps_the_reading_and_query_deadline() {
+        let short = r"\\?\hid#vid_046d&pid_c53f&mi_02&col01#7&12345678&0&0000#{hid-guid}";
+        let long = r"\\?\hid#vid_046d&pid_c53f&mi_02&col02#7&12345678&0&0001#{hid-guid}";
+        let mut sources = Sources::default();
+        sources.add(short.into(), "g305".into());
+        let key = protocol::receiver_key(short).unwrap_or_default();
+        let generation = sources.entries[&key].generation;
+        let _ = sources.complete(Completed {
+            path: key,
+            generation,
+            result: Ok(vec![Reading {
+                slot: 1,
+                kind: Kind::Mouse,
+                percent: Some(90),
+            }]),
+        });
+        let next = sources.deadline();
+        sources.add(long.into(), "g305".into());
+        assert_eq!(sources.deadline(), next);
+        assert_eq!(
+            sources.devices().next().and_then(|device| device.percent),
+            Some(90)
+        );
+        sources.remove(short);
+        assert_eq!(sources.deadline(), next);
+        assert_eq!(sources.devices().count(), 1);
+        sources.remove(long);
+        assert_eq!(sources.devices().count(), 0);
+    }
+
+    #[test]
+    fn diagnostics_are_throttled_and_recovery_is_logged_once() {
+        let path = r"\\?\hid#vid_046d&pid_c53f&mi_02#instance";
+        let mut sources = Sources::default();
+        sources.add(path.into(), "g305".into());
+        let generation = sources.entries[path].generation;
+        let done = |result| Completed {
+            path: path.into(),
+            generation,
+            result,
+        };
+        for attempt in 1u8..=12 {
+            assert_eq!(
+                sources
+                    .complete(done(Err(anyhow::anyhow!("timeout"))))
+                    .is_some(),
+                attempt.is_power_of_two()
+            );
+        }
+        assert!(
+            sources
+                .complete(done(Ok(Vec::new())))
+                .is_some_and(|text| text.contains("recovered"))
+        );
+        assert!(sources.complete(done(Ok(Vec::new()))).is_none());
+    }
 
     #[test]
     fn receiver_collections_are_polled_once_and_hotplug_invalidates_partial_queries() {
@@ -409,7 +635,7 @@ mod tests {
         sources.add(long.replace("12345678", "87654321"), "g305-b".into());
         assert_eq!(sources.entries.len(), 2);
         sources.remove(short);
-        assert!(sources.entries[&key].devices.is_empty());
+        assert_eq!(sources.entries[&key].devices.len(), 1);
         assert_eq!(sources.entries[&key].paths.len(), 1);
         sources.remove(&long.to_ascii_uppercase());
         assert!(!sources.entries.contains_key(&key));
@@ -443,8 +669,9 @@ mod tests {
             generation,
             result: Err(anyhow::anyhow!("timeout")),
         });
-        assert_eq!(sources.devices().count(), 0);
+        assert_eq!(sources.devices().count(), 1);
         sources.remove(path);
+        assert_eq!(sources.devices().count(), 0);
         assert!(sources.deadline().is_none());
     }
 

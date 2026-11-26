@@ -1844,7 +1844,13 @@ impl MenuBar {
             && self.accessories.as_ref().is_none_or(|monitor| {
                 monitor.snapshot().state == muelle_shell::accessories::State::Unavailable
             });
-        if self.accessories_enabled && (audio_changed || retry_due) {
+        if self.accessories_enabled
+            && audio_changed
+            && let Some(monitor) = &self.accessories
+        {
+            monitor.audio_changed();
+        }
+        if self.accessories_enabled && retry_due {
             self.restart_accessories(gfx)?;
         }
         self.schedule_next_minute();
@@ -1852,7 +1858,8 @@ impl MenuBar {
     }
 
     /// Ordinary audio notifications do not requery network, registry, providers
-    /// or clock. A default-device change still restarts enabled accessories.
+    /// or clock. Route changes only notify the accessory worker, preserving USB
+    /// readings, discovery watchers and their query rate limits.
     pub fn audio_changed(&mut self, gfx: &Gfx) -> Result<()> {
         let volume = self.audio.as_mut().and_then(AudioWatch::volume);
         if self
@@ -1860,9 +1867,9 @@ impl MenuBar {
             .as_ref()
             .is_some_and(AudioWatch::take_default_changed)
             && self.accessories_enabled
+            && let Some(monitor) = &self.accessories
         {
-            self.status.volume = volume;
-            self.restart_accessories(gfx)?;
+            monitor.audio_changed();
         }
         self.apply_volume_reading(gfx, volume)
     }

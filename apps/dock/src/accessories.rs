@@ -20,7 +20,7 @@ use std::{
     thread,
 };
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use muelle_shell::accessories::{Snapshot, State};
 use serde::{Deserialize, Serialize};
 use windows::Win32::{
@@ -53,12 +53,24 @@ const MAX_FRAME: u64 = 64 * 1024;
 enum Frame {
     Busy,
     Ready(Snapshot),
-    Failed,
+    Diagnostic(String),
+    Failed(String),
+}
+
+// Private protocol diagnostics never contain device paths, names or packets.
+// Keep them single-line and bounded before serialization and before logging.
+fn diagnostic(message: &str) -> String {
+    let text: String = message
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(512)
+        .collect();
+    text[..text.floor_char_boundary(text.len().min(512))].to_owned()
 }
 
 pub fn worker_main(visibility: Option<&str>) -> Result<()> {
     if let Err(error) = worker::run(visibility) {
-        let _ = worker::emit(&Frame::Failed);
+        let _ = worker::emit(&Frame::Failed(diagnostic(&format!("{error:#}"))));
         return Err(error);
     }
     Ok(())
@@ -145,8 +157,15 @@ impl Monitor {
         thread::Builder::new()
             .name("muelle-accessories".into())
             .spawn(move || {
-                if background.alive.load(Ordering::Acquire) {
-                    let _ = read_worker(&background);
+                if background.alive.load(Ordering::Acquire)
+                    && let Err(error) = read_worker(&background)
+                    && background.alive.load(Ordering::Acquire)
+                    && !background.timed_out.load(Ordering::Acquire)
+                {
+                    muelle_shell::log::line(&format!(
+                        "accessory reader failed: {}",
+                        diagnostic(&format!("{error:#}"))
+                    ));
                 }
                 background.kill();
                 background
@@ -169,6 +188,9 @@ impl Monitor {
     }
     pub fn set_visible(&self, visible: bool) {
         self.shared.visibility.set(visible);
+    }
+    pub fn audio_changed(&self) {
+        self.shared.visibility.audio_changed();
     }
 }
 impl Drop for Monitor {
@@ -220,6 +242,7 @@ unsafe extern "system" fn expired(context: *mut std::ffi::c_void, _: bool) {
     let shared = unsafe { &*context.cast::<Shared>() };
     shared.timed_out.store(true, Ordering::Release);
     if shared.alive.load(Ordering::Acquire) {
+        muelle_shell::log::line("accessory reader exceeded its response deadline or exited");
         shared.failed();
     }
     shared.kill();
@@ -316,7 +339,14 @@ fn read_worker(shared: &Arc<Shared>) -> Result<()> {
                 );
                 shared.publish(snapshot);
             }
-            Frame::Failed => return Ok(()),
+            Frame::Diagnostic(message) => {
+                ensure!(message.len() <= 512, "oversized accessory diagnostic");
+                muelle_shell::log::line(&format!("accessories: {}", diagnostic(&message)));
+            }
+            Frame::Failed(message) => {
+                ensure!(message.len() <= 512, "oversized accessory failure");
+                bail!("{}", diagnostic(&message));
+            }
         }
         if !shared.alive.load(Ordering::Acquire) {
             return Ok(());

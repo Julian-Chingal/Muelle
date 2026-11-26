@@ -1,7 +1,7 @@
 //! Read-only protocol facts, independently implemented. References and device
 //! limits live in ACCESSORIES.md. No settings, pairing or firmware commands.
 
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
 use muelle_shell::accessories::Kind;
 use serde::{Deserialize, Serialize};
 
@@ -256,7 +256,9 @@ fn hidpp_call(
     parameters: &[u8],
 ) -> Result<Vec<u8>> {
     let request = hidpp_request(slot, feature, function, parameters);
-    let reply = wire.exchange(&request, |reply| hidpp_matches(&request, reply))?;
+    let reply = wire
+        .exchange(&request, |reply| hidpp_matches(&request, reply))
+        .with_context(|| format!("HID++ feature {feature:02x}, function {function:02x}"))?;
     ensure!(hidpp_matches(&request, &reply), "invalid HID++ response");
     ensure!(reply[2] == feature, "HID++ query rejected");
     Ok(reply[4..].to_vec())
