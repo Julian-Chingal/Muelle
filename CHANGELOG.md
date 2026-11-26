@@ -10,6 +10,10 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### English
 
+- Browser profiles now have separate Dock entries with the name and avatar
+  published by Chrome. Pins and profile shortcuts reopen the right profile;
+  compatible Edge/Brave metadata uses the same path. Images load through the
+  existing cached workers, without Explorer interception or background polling.
 - Uninstall now waits for the Dock and watchdog to stop, restores the original
   Windows taskbar autohide preference and checks the result before deleting its
   backup. The uninstaller can restore it even if muelle.exe is missing. Failed
@@ -18,6 +22,11 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### Español
 
+- Los perfiles del navegador tienen entradas independientes en el Dock con el
+  nombre y avatar publicados por Chrome. Los anclajes y accesos directos abren
+  el perfil correcto; se aprovechan los mismos datos en Edge/Brave compatibles.
+  Las imágenes usan los trabajadores y la caché existentes, sin intervenir
+  Explorer ni añadir sondeos periódicos.
 - La desinstalación espera al cierre del Dock y su guardián, restaura el autohide
   original de Windows y comprueba el resultado antes de borrar el respaldo.
   Puede restaurarlo aunque falte muelle.exe. Si no se confirma, se detiene antes

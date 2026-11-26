@@ -66,6 +66,9 @@ impl IconCache {
     /// Like [`get`](Self::get), but stores each `variant` separately for items
     /// whose icon depends on their state, such as an empty or full recycle bin.
     pub fn get_variant(&self, id: &str, variant: &str, size: u32) -> Result<AppVisual, IconError> {
+        if let Some(profile) = crate::browser_profiles::Profile::parse(id) {
+            return self.profile_visual(id, &profile, size);
+        }
         // A program pinned from a shortcut Muelle keeps shows that shortcut's
         // name and icon ("Launch Hidden", not "Windows Based Script Host"),
         // as the taskbar does. Part of the key, so replacing or removing the
@@ -115,6 +118,56 @@ impl IconCache {
         id.hash(&mut hasher);
         self.folder
             .join(format!("{:016x}-{size}.bin", hasher.finish()))
+    }
+
+    fn profile_visual(
+        &self,
+        id: &str,
+        profile: &crate::browser_profiles::Profile,
+        size: u32,
+    ) -> Result<AppVisual, IconError> {
+        let metadata = crate::browser_profiles::visual(id, &self.folder);
+        let name = metadata.as_ref().map_or_else(
+            || profile.fallback_name(),
+            |visual| crate::browser_profiles::display_name(&visual.name),
+        );
+        let name = if name.is_empty() {
+            profile.fallback_name()
+        } else {
+            name
+        };
+        let location = metadata
+            .as_ref()
+            .and_then(|visual| crate::browser_profiles::icon_location(&visual.icon));
+        let mut hash = DefaultHasher::new();
+        name.hash(&mut hash);
+        location
+            .map(|(file, index)| {
+                // Avatar files can be replaced twice within the same second.
+                let meta = fs::metadata(file).ok();
+                (
+                    file,
+                    index,
+                    meta.as_ref().map(std::fs::Metadata::len),
+                    meta.and_then(|meta| meta.modified().ok()),
+                )
+            })
+            .hash(&mut hash);
+        stamp_of(&profile.executable).hash(&mut hash);
+        let stamp = hash.finish();
+        let path = self.entry_path(id, size);
+        if let Some(cached) = fs::read(&path).ok().and_then(|bytes| decode(&bytes, stamp)) {
+            return Ok(cached);
+        }
+        // Chromium's relaunch icon already contains the profile avatar. If it
+        // has not generated it yet, keep a usable browser icon and profile name.
+        let icon = location
+            .and_then(|(file, index)| load_icon_at(file, index, size).ok())
+            .map_or_else(|| load_icon(&profile.executable, size), Ok)?;
+        let visual = AppVisual { name, icon };
+        let _ = fs::create_dir_all(&self.folder);
+        let _ = fs::write(&path, encode(&visual, stamp));
+        Ok(visual)
     }
 }
 

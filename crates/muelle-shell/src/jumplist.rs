@@ -232,6 +232,9 @@ pub fn for_dock_item(id: &str, windows: &[isize]) -> Vec<Group> {
 /// else from its shortcut or program.
 #[must_use]
 pub fn app_id(id: &str, window: Option<isize>) -> Option<String> {
+    if let Some(profile) = crate::browser_profiles::Profile::parse(id) {
+        return Some(profile.aumid().to_owned());
+    }
     // SAFETY: The resolver and the shell item live through each call, and
     // each returned string is freed once read.
     unsafe {
@@ -767,11 +770,18 @@ fn open_item(id_list: &[u8], program: Option<&str>) -> windows::core::Result<()>
             String::from_utf16_lossy(&path[..len])
         })
         .filter(|file| Path::new(file).is_file());
-    let program = program.filter(|program| tracker::is_program(program));
+    let profile = program.and_then(crate::browser_profiles::Profile::parse);
+    let program = profile
+        .as_ref()
+        .map(|profile| profile.executable.as_str())
+        .or_else(|| program.filter(|program| tracker::is_program(program)));
     let (file_name, parameters) = match (program, file) {
         (Some(program), Some(file)) => (
             Some(HSTRING::from(program)),
-            Some(HSTRING::from(format!("\"{file}\""))),
+            Some(HSTRING::from(profile.as_ref().map_or_else(
+                || format!("\"{file}\""),
+                |profile| format!("{} \"{file}\"", profile.arguments()),
+            ))),
         ),
         _ => (None, None),
     };

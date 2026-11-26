@@ -351,10 +351,10 @@ impl App {
             .iter()
             .map(|window| window.hwnd)
             .collect();
-        let edge_open = self
-            .windows
-            .iter()
-            .any(|window| window.app_id.ends_with("\\msedge.exe"));
+        let edge_open = self.windows.iter().any(|window| {
+            muelle_shell::browser_profiles::program(&window.app_id)
+                .is_some_and(|program| program.ends_with("\\msedge.exe"))
+        });
         if order.len() < 2 || status::alt_tab_lists_more_than_windows(edge_open) {
             return Ok(());
         }
@@ -525,13 +525,22 @@ impl App {
         }
         self.calm_windows();
         let recent_before = self.roster.recent().to_vec();
-        let changed = self
-            .roster
-            .sync(self.windows.iter().map(|window| window.app_id.as_str()));
+        let mut refined = false;
+        for window in &self.windows {
+            if let Some(profile) = muelle_shell::browser_profiles::Profile::parse(&window.app_id)
+                && profile.is_default()
+            {
+                refined |= self.roster.refine_pin(&profile.executable, &window.app_id);
+            }
+        }
+        let changed = refined
+            | self
+                .roster
+                .sync(self.windows.iter().map(|window| window.app_id.as_str()));
         if !self.config.pin_explorer {
             self.roster.forget_recent(&explorer_id());
         }
-        if self.roster.recent() != recent_before.as_slice() {
+        if refined || self.roster.recent() != recent_before.as_slice() {
             save_settings(&self.roster, &self.config);
         }
 
@@ -590,6 +599,7 @@ impl App {
     pub(super) fn on_foreground_changed(&mut self) -> Result<()> {
         self.close_preview();
         let foreground = tracker::foreground_window();
+        self.tracker.refresh_browser(foreground);
         self.flights.retain(|flight| flight.is_current(foreground));
         // The app roster can stay identical while its windows change z-order.
         // Refresh their order so the next dock activation selects the actual
@@ -619,6 +629,11 @@ impl App {
         self.windows = self
             .tracker
             .list_with_workspaces(self.config.show_other_workspaces);
+        let changed = muelle_shell::browser_profiles::take_changed();
+        for id in &changed {
+            self.icons.invalidate(id);
+            let _ = self.icons.get(id, "");
+        }
         self.preview_order.update(&self.windows);
         let pruned = self
             .attention

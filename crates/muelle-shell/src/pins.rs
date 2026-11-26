@@ -245,7 +245,13 @@ fn pinned_item(id: &str) -> Option<String> {
     fs::read_dir(folder)
         .ok()?
         .filter_map(|entry| Some(entry.ok()?.path()))
-        .find(|link| link_target(link).is_some_and(|target| normalize_id(&target) == id))
+        .find(|link| {
+            if crate::browser_profiles::is_profile(id) {
+                shortcut_id(link).as_deref() == Some(id)
+            } else {
+                link_target(link).is_some_and(|target| normalize_id(&target) == id)
+            }
+        })
         .map(|link| link.to_string_lossy().into_owned())
 }
 
@@ -313,6 +319,10 @@ fn invoke_verb(path: &str, verb: &str) -> bool {
 /// Requires COM on the calling thread.
 #[must_use]
 pub fn app_exists(id: &str) -> bool {
+    if crate::browser_profiles::is_profile(id) {
+        return crate::browser_profiles::Profile::parse(id)
+            .is_some_and(|profile| app_exists(&profile.executable));
+    }
     if id.starts_with("shell:AppsFolder\\") {
         // SAFETY: Only asks the shell whether it can resolve the item.
         return unsafe {
@@ -348,6 +358,11 @@ pub fn link_target(link: &Path) -> Option<String> {
 pub fn shortcut_id(link: &Path) -> Option<String> {
     let (target, arguments) = read_link(link)?;
     let target = target.filter(|target| Path::new(target).exists())?;
+    if let Some(aumid) = link_app_id(link)
+        && let Some(id) = crate::browser_profiles::shortcut_id(link, &target, &arguments, &aumid)
+    {
+        return Some(id);
+    }
     // A web app's shortcut opens a launcher (`msedge_proxy.exe`), but the
     // app's windows carry its own identity: pinned by it, they gather under
     // the pin, as on the taskbar.
@@ -443,7 +458,10 @@ unsafe fn take_string(text: PWSTR) -> Option<String> {
 /// Requires COM to be initialized on the calling thread.
 #[must_use]
 pub fn launch_target(id: &str) -> Option<String> {
-    if crate::tracker::is_shortcut(id) || id.starts_with("shell:") {
+    if crate::tracker::is_shortcut(id)
+        || id.starts_with("shell:")
+        || crate::browser_profiles::is_profile(id)
+    {
         return None;
     }
     [kept_folder(), taskbar_folder()]
@@ -468,7 +486,10 @@ pub fn launch_target(id: &str) -> Option<String> {
 /// Requires COM to be initialized on the calling thread.
 #[must_use]
 pub fn shortcut_for_program(id: &str) -> Option<String> {
-    if crate::tracker::is_shortcut(id) || id.starts_with("shell:") {
+    if crate::tracker::is_shortcut(id)
+        || id.starts_with("shell:")
+        || crate::browser_profiles::is_profile(id)
+    {
         return None;
     }
     [kept_folder(), taskbar_folder()]
@@ -495,7 +516,7 @@ pub fn shortcut_for_program(id: &str) -> Option<String> {
 /// Requires COM to be initialized on the calling thread.
 #[must_use]
 pub fn kept_shortcut_for(id: &str) -> Option<String> {
-    if crate::tracker::is_shortcut(id) {
+    if crate::tracker::is_shortcut(id) || crate::browser_profiles::is_profile(id) {
         return None;
     }
     let folders = if id.starts_with(APPS_FOLDER) {
@@ -538,6 +559,9 @@ fn taskbar_folder() -> Option<PathBuf> {
 #[must_use]
 pub fn keep_shortcut(link: &Path) -> Option<String> {
     let id = shortcut_id(link)?;
+    if crate::browser_profiles::is_profile(&id) {
+        return Some(id);
+    }
     let (_, arguments) = read_link(link)?;
     let is_link = crate::tracker::is_shortcut(&id);
     if !is_link && arguments.is_empty() {

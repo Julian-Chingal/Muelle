@@ -30,6 +30,7 @@ const ICON_SIZE: u32 = 256;
 struct Request {
     id: String,
     variant: &'static str,
+    generation: u64,
 }
 
 struct Loaded {
@@ -42,6 +43,8 @@ pub struct Visuals {
     results: Receiver<Loaded>,
     ready: HashMap<Request, Option<AppVisual>>,
     pending: HashSet<Request>,
+    generations: HashMap<String, u64>,
+    generation: u64,
     window: Arc<AtomicIsize>,
 }
 
@@ -116,6 +119,8 @@ impl Visuals {
             results,
             ready: HashMap::new(),
             pending: HashSet::new(),
+            generations: HashMap::new(),
+            generation: 0,
             window,
         })
     }
@@ -125,6 +130,7 @@ impl Visuals {
         let request = Request {
             id: id.to_owned(),
             variant,
+            generation: self.generations.get(id).copied().unwrap_or(0),
         };
         if !self.ready.contains_key(&request)
             && !self.pending.contains(&request)
@@ -142,6 +148,7 @@ impl Visuals {
             .get(&Request {
                 id: id.to_owned(),
                 variant,
+                generation: self.generations.get(id).copied().unwrap_or(0),
             })
             .and_then(Option::as_ref)
     }
@@ -150,6 +157,15 @@ impl Visuals {
         let mut changed = Vec::new();
         for loaded in self.results.try_iter() {
             self.pending.remove(&loaded.request);
+            if loaded.request.generation
+                != self
+                    .generations
+                    .get(&loaded.request.id)
+                    .copied()
+                    .unwrap_or(0)
+            {
+                continue;
+            }
             changed.push(loaded.request.id.clone());
             self.ready.insert(loaded.request, loaded.visual);
         }
@@ -158,6 +174,16 @@ impl Visuals {
 
     pub fn retain(&mut self, mut needed: impl FnMut(&str) -> bool) {
         self.ready.retain(|request, _| needed(&request.id));
+        self.generations
+            .retain(|id, _| needed(id) || self.pending.iter().any(|request| request.id == *id));
+    }
+
+    /// Keep the previous pixels visible until their replacement arrives. A
+    /// generation prevents an older in-flight load overwriting a changed avatar.
+    pub fn invalidate(&mut self, id: &str) {
+        self.generation = self.generation.wrapping_add(1);
+        self.generations.insert(id.to_owned(), self.generation);
+        self.ready.retain(|request, _| request.id != id);
     }
 }
 
@@ -171,6 +197,9 @@ impl Drop for Visuals {
 
 /// A temporary label that does no file access or shell lookup.
 pub fn fallback_name(id: &str) -> String {
+    if let Some(profile) = muelle_shell::browser_profiles::Profile::parse(id) {
+        return profile.fallback_name();
+    }
     let file = id.rsplit(['\\', '/']).next().unwrap_or(id);
     file.strip_suffix(".exe").unwrap_or(file).to_owned()
 }
@@ -182,6 +211,66 @@ mod tests {
         sync::{Condvar, mpsc::channel},
         time::{Duration, Instant},
     };
+
+    #[test]
+    fn a_stale_avatar_load_cannot_replace_a_new_generation() -> Result<()> {
+        use std::sync::atomic::AtomicUsize;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let (started, waiting) = channel();
+        let gate = Arc::new((Mutex::new(false), Condvar::new()));
+        let release = Arc::clone(&gate);
+        let counter = Arc::clone(&calls);
+        let mut visuals = Visuals::start(HWND::default(), 0, move |_, _| {
+            let version = counter.fetch_add(1, Ordering::Relaxed);
+            if version == 0 {
+                let _ = started.send(());
+                let open = release
+                    .0
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                drop(
+                    release
+                        .1
+                        .wait_while(open, |open| !*open)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner),
+                );
+            }
+            Some(AppVisual {
+                name: version.to_string(),
+                icon: muelle_shell::icons::IconImage {
+                    width: 1,
+                    height: 1,
+                    bgra: vec![0, 0, 0, 255],
+                },
+            })
+        })?;
+        visuals.get("profile", "");
+        waiting.recv_timeout(Duration::from_secs(2))?;
+        visuals.invalidate("profile");
+        visuals.get("profile", "");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while visuals.peek("profile", "").is_none() && Instant::now() < deadline {
+            visuals.collect();
+            thread::sleep(Duration::from_millis(1));
+        }
+        *gate
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = true;
+        gate.1.notify_all();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !visuals.pending.is_empty() && Instant::now() < deadline {
+            visuals.collect();
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            visuals
+                .peek("profile", "")
+                .map(|visual| visual.name.as_str()),
+            Some("1")
+        );
+        Ok(())
+    }
 
     #[test]
     fn blocked_shell_workers_do_not_block_requests_or_duplicate_work() -> Result<()> {

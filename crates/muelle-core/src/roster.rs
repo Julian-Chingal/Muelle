@@ -137,6 +137,26 @@ impl Roster {
         self.pinned.iter().any(|pinned| pinned == id) || self.group_of(id).is_some()
     }
 
+    /// Refine a generic pin into its known default browser profile, preserving
+    /// its position and group. Never merge two pins the user chose separately.
+    pub fn refine_pin(&mut self, old: &str, new: &str) -> bool {
+        if old == new || !self.is_pinned(old) || self.is_pinned(new) {
+            return false;
+        }
+        for id in self.pinned.iter_mut().chain(
+            self.groups
+                .iter_mut()
+                .flat_map(|group| group.apps.iter_mut()),
+        ) {
+            if id == old {
+                *id = new.to_owned();
+            }
+        }
+        self.extra.retain(|id| id != old && id != new);
+        self.recent.retain(|id| id != old && id != new);
+        true
+    }
+
     #[must_use]
     pub fn is_group(&self, id: &str) -> bool {
         self.groups.iter().any(|group| group.id == id)
@@ -412,6 +432,34 @@ impl Roster {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_refinement_preserves_pin_order_and_group_members() {
+        let mut roster = Roster::new(vec!["first".into(), "chrome".into(), "last".into()], vec![]);
+        roster.sync(["profile", "other-profile"]);
+        assert!(roster.refine_pin("chrome", "profile"));
+        assert_eq!(roster.pinned(), ["first", "profile", "last"]);
+        assert_eq!(
+            roster
+                .apps()
+                .iter()
+                .filter(|app| app.id == "profile")
+                .count(),
+            1
+        );
+
+        let group = "muelle:group:browser";
+        let mut grouped = Roster::new(vec![group.into()], vec![]).with_groups(vec![Group {
+            id: group.into(),
+            apps: vec!["chrome".into(), "editor".into()],
+        }]);
+        assert!(grouped.refine_pin("chrome", "profile"));
+        assert_eq!(
+            grouped.group(group).map(|group| group.apps.as_slice()),
+            Some(["profile".into(), "editor".into()].as_slice())
+        );
+        assert!(!grouped.refine_pin("editor", "profile"));
+    }
 
     fn roster() -> Roster {
         Roster::new(vec!["explorer".into(), "browser".into()], Vec::new())

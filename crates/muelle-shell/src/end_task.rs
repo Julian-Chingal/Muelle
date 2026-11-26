@@ -87,6 +87,11 @@ impl PreparedEndTask {
     /// are reused. Protected/elevated/shared-host targets remain unavailable.
     #[must_use]
     pub fn capture(app: &str, windows: &[isize], peers: &[TrackedWindow]) -> Option<Self> {
+        // Profiles share the browser process. Ending one would risk closing
+        // other profiles (including windows outside the current workspace).
+        if crate::browser_profiles::is_profile(app) {
+            return None;
+        }
         if windows.is_empty() || windows.len() > 128 {
             return None;
         }

@@ -184,6 +184,7 @@ impl App {
         if let Some(view) = &self.group_view
             && let Ok(Some((id, _))) = view.item_at_cursor()
             && (tracker::is_program(&id)
+                || muelle_shell::browser_profiles::is_profile(&id)
                 || tracker::is_shortcut(&id)
                 || pins::launch_target(&id).is_some())
         {
@@ -210,6 +211,7 @@ impl App {
         match entry.role {
             Role::App
                 if tracker::is_program(&id)
+                    || muelle_shell::browser_profiles::is_profile(&id)
                     || tracker::is_shortcut(&id)
                     || pins::launch_target(&id).is_some() =>
             {

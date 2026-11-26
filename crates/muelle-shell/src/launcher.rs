@@ -60,13 +60,35 @@ pub fn open_as_admin(id: &str) -> Result<(), LaunchError> {
 }
 
 fn shell_execute(verb: PCWSTR, id: &str, arguments: Option<&str>) -> Result<(), LaunchError> {
+    let profile = crate::browser_profiles::Profile::parse(id);
+    if crate::browser_profiles::is_profile(id) && profile.is_none() {
+        return Err(LaunchError {
+            id: id.to_owned(),
+            code: windows::Win32::Foundation::E_INVALIDARG.0 as isize,
+        });
+    }
+    let profile_arguments = profile.as_ref().map(|profile| {
+        let mut selected = profile.arguments();
+        if let Some(arguments) = arguments {
+            selected.push(' ');
+            selected.push_str(arguments);
+        }
+        selected
+    });
     allow_foreground();
     // SAFETY: Suppresses system modal error popups (e.g. broken shell extensions or missing ordinals).
     unsafe {
         let _ = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
     }
-    let file = HSTRING::from(id);
-    let arguments = arguments.map(HSTRING::from);
+    let file = HSTRING::from(
+        profile
+            .as_ref()
+            .map_or(id, |profile| profile.executable.as_str()),
+    );
+    let arguments = profile_arguments
+        .as_deref()
+        .or(arguments)
+        .map(HSTRING::from);
     let mut request = SHELLEXECUTEINFOW {
         cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
         // A disposable caller must finish activation (including DDE) before
@@ -417,6 +439,8 @@ fn keep_under(flyout: HWND, (center, top): (i32, i32)) {
 }
 
 pub fn reveal(path: &str) -> Result<(), LaunchError> {
+    let program = crate::browser_profiles::program(path);
+    let path = program.as_deref().unwrap_or(path);
     shell_execute(
         w!("open"),
         "explorer.exe",

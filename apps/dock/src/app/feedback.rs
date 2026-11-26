@@ -41,9 +41,11 @@ pub(super) fn entry_overlay(
     entry: &Entry,
 ) -> Option<std::rc::Rc<muelle_shell::icons::IconImage>> {
     let of_app = |id: &str| {
+        // Chromium's published profile icon already includes its avatar. This
+        // feature neither consumes taskband overlays nor paints it twice.
         windows
             .iter()
-            .filter(|window| window.app_id == id)
+            .filter(|window| window.app_id == id && !muelle_shell::browser_profiles::is_profile(id))
             .map(|window| window.hwnd)
             .collect::<Vec<_>>()
     };
@@ -54,7 +56,13 @@ pub(super) fn entry_overlay(
             .iter()
             .find_map(|id| crate::overlays::image_for(of_app(id).into_iter())),
         Role::Window => {
-            crate::overlays::image_for(entry.id.as_deref().and_then(window_of).into_iter())
+            let hwnd = entry.id.as_deref().and_then(window_of)?;
+            if windows.iter().any(|window| {
+                window.hwnd == hwnd && muelle_shell::browser_profiles::is_profile(&window.app_id)
+            }) {
+                return None;
+            }
+            crate::overlays::image_for([hwnd].into_iter())
         }
         _ => None,
     }

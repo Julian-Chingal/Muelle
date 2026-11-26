@@ -53,7 +53,7 @@ pub struct TrackedWindow {
 pub fn normalize_id(id: &str) -> String {
     // Shortcuts kept as pins (see `pins::shortcut_id`) keep their case: the
     // shell shows their file name as the label.
-    if id.starts_with(APPS_FOLDER) || is_shortcut(id) {
+    if id.starts_with(APPS_FOLDER) || is_shortcut(id) || crate::browser_profiles::is_profile(id) {
         id.to_owned()
     } else {
         id.to_lowercase()
@@ -71,6 +71,19 @@ pub struct WindowTracker {
 }
 
 impl WindowTracker {
+    /// Recheck only browser profile properties on a focus transition. Avatar
+    /// changes use the existing icon workers, never disk access on this thread.
+    pub fn refresh_browser(&mut self, hwnd: isize) {
+        if let Some(program) = self
+            .app_ids
+            .get(&hwnd)
+            .and_then(|id| crate::browser_profiles::program(id))
+            && let Some(id) = crate::browser_profiles::window_id(HWND(hwnd as *mut _), &program)
+        {
+            self.app_ids.insert(hwnd, id);
+        }
+    }
+
     pub fn list(&mut self) -> Vec<TrackedWindow> {
         self.list_with_workspaces(false)
     }
@@ -429,10 +442,9 @@ fn recover_browser_z_order_with(
         let browser = window.hwnd;
         if window.app_id == active.app_id
             || is_cloaked(HWND(browser as *mut _))
-            || !matches!(
-                window.app_id.rsplit('\\').next(),
-                Some("msedge.exe" | "brave.exe")
-            )
+            || !crate::browser_profiles::program(&window.app_id).is_some_and(|program| {
+                program.ends_with("\\msedge.exe") || program.ends_with("\\brave.exe")
+            })
             || !topmost(browser)
         {
             continue;
@@ -767,6 +779,9 @@ fn app_id(hwnd: HWND) -> Option<String> {
             .ok()
             .map(|()| {
                 let image = String::from_utf16_lossy(&buffer[..len as usize]);
+                if let Some(id) = crate::browser_profiles::window_id(hwnd, &image) {
+                    return id;
+                }
                 // A program whose windows belong to a host that is no .exe
                 // (LibreOffice's soffice.bin) has no icon or name of its own
                 // there; its windows say which app they are (Calc, Writer),
