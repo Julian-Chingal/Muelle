@@ -6,10 +6,17 @@ copies the section of the version being published into the GitHub release.
 Cada versión lista sus cambios en inglés y en español. El flujo de publicación
 copia la sección de la versión que se publica a la release de GitHub.
 
-## [Unreleased]
+## [0.1.26]
 
 ### English
 
+- The browser-profile shortcut test accepts Windows runners whose temporary
+  directory uses an 8.3 alias, without weakening profile identity checks.
+- Accessory battery detection recovers stopped Windows discovery sources separately.
+  Temporary USB errors preserve recent readings; disconnects and expiry clear them.
+  Audio output changes keep the mouse reader and query schedule intact. HID++ has
+  more time to finish slow G305 exchanges, with bounded, throttled failure diagnostics
+  and the same normal 60-second interval.
 - Selecting a mascot in Settings plays a five-second walk and greeting on the
   Dock. Selecting it again replays the demo; rapid choices replace the current
   preview instead of queuing animations. Windows animation preferences apply.
@@ -29,6 +36,13 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### Español
 
+- La prueba de accesos directos de perfiles funciona si la carpeta temporal del
+  runner usa un alias 8.3 de Windows, conservando la comprobación de identidad.
+- La batería de accesorios recupera por separado los detectores detenidos de Windows.
+  Los errores USB temporales conservan lecturas recientes; desconectar o caducar
+  las retira. Cambiar la salida de audio conserva el lector del mouse y sus plazos.
+  HID++ dispone de más margen para respuestas lentas del G305, con diagnósticos
+  acotados y limitados, manteniendo el intervalo normal de 60 segundos.
 - Elegir una mascota en Ajustes muestra una caminata y saludo de cinco segundos
   sobre el Dock. Pulsarla de nuevo repite la demostración; las elecciones rápidas
   sustituyen la anterior sin acumular animaciones. Respeta las animaciones de Windows.
