@@ -229,7 +229,7 @@ test("retired Windows status-item overrides expose no controls and create no sav
     try {
       const controls = [...elements(view.body())].filter((node) => "checked" in node.props);
       assert.deepEqual(controls.map((node) => node.props.label), [texts[language].menuBarShow,
-        texts[language].menuBarMusic, texts[language].aiUsage,
+        texts[language].menuBarMusic,
         texts[language].accessoryBattery, texts[language].menuBarSystemMonitor,
         texts[language].menuBarNotifications]);
       view.fire(60);
@@ -459,11 +459,11 @@ test("a queued newer choice wins over an earlier failed write", async () => {
     view.fire(60);
     await settle();
     view.change(texts.en.menuBarMusic, true);
-    view.change(texts.en.aiUsage, false);
+    view.change(texts.en.menuBarNotifications, true);
     view.fire(60);
     rejectFirst(new Error("disk busy"));
     await settle();
-    assert.deepEqual(view.calls, [{ menuBarMusic: false }, { menuBarMusic: true, aiUsage: false }]);
+    assert.deepEqual(view.calls, [{ menuBarMusic: false }, { menuBarMusic: true, menuBarNotifications: true }]);
     assert.equal(await view.close(), false);
     assert.equal(view.calls.length, 2, "the obsolete value must not be replayed on close");
   } finally { unmount(); }

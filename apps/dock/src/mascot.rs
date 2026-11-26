@@ -1,6 +1,6 @@
 //! The mascot: Claude's crab, a tabby cat, a fox, a capybara, a mochi or a
 //! chibi girl, in pixel art, that comes out
-//! only for moments worth it (an AI plan resetting or running out, the
+//! only for moments worth it (the
 //! charger plugged in or out, energy saver starting) and plays a short act,
 //! then leaves. Both play the same acts with the same faces.
 //!
@@ -1081,11 +1081,12 @@ fn paint(grid: &[Vec<u8>], cell: u32) -> IconImage {
 /// Why the crab comes out.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Act {
-    /// An AI plan's limit reset: back to 0 %.
+    // The three acts for AI plans stay as art; the dock no longer reads usage.
+    #[allow(dead_code)]
     Fresh,
-    /// It passed 90 %.
+    #[allow(dead_code)]
     Nervous,
-    /// It reached 100 %.
+    #[allow(dead_code)]
     Exhausted,
     /// The charger was plugged in.
     Charging,

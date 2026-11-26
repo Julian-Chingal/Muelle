@@ -323,7 +323,6 @@ impl App {
         } else if self.menubar.is_none() {
             self.menubar = MenuBar::create(
                 &self.gfx,
-                self.config.ai_usage,
                 self.config.menu_bar_music,
                 self.config.menu_bar_auto_hide,
                 widgets,
@@ -336,7 +335,6 @@ impl App {
             let applied = bar
                 .set_auto_hide(self.config.menu_bar_auto_hide)
                 .and_then(|()| bar.set_smart_hide(self.config.menu_bar_smart_hide))
-                .and_then(|()| bar.set_usage_enabled(&self.gfx, self.config.ai_usage))
                 .and_then(|()| bar.set_media_enabled(&self.gfx, self.config.menu_bar_music))
                 .and_then(|()| bar.set_widgets(&self.gfx, widgets))
                 .and_then(|()| {

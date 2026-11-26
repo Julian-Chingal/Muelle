@@ -297,8 +297,7 @@ impl App {
         Ok(())
     }
 
-    /// A moment found by the menu bar (an AI plan's figure): the crab comes
-    /// out under that provider.
+    /// A moment found by the menu bar: the crab comes out for it.
     pub(super) fn take_bar_cue(&mut self) {
         let cue = self.menubar.as_mut().and_then(MenuBar::take_cue);
         let Some((act, point)) = cue else {

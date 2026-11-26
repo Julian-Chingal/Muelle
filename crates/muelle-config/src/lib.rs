@@ -94,10 +94,8 @@ pub struct Config {
     /// shows unless the window in front reaches under it. Settings offers it
     /// and `menu_bar_auto_hide` as one choice; auto-hide wins if both are on.
     pub menu_bar_smart_hide: bool,
-    /// Show supported AI providers' plan usage in the menu bar.
-    pub ai_usage: bool,
-    /// Show what is playing (title, controls) in the menu bar. With this and
-    /// `ai_usage` off there is no island at all (issue #28).
+    /// Show what is playing (title, controls) in the menu bar. Off, there is
+    /// no island at all (issue #28).
     pub menu_bar_music: bool,
     /// Visual style and placement of the music and AI usage island in the menu bar.
     pub menu_bar_island_style: IslandStyle,
@@ -380,7 +378,6 @@ impl Default for Config {
             menu_bar: true,
             menu_bar_auto_hide: false,
             menu_bar_smart_hide: false,
-            ai_usage: true,
             menu_bar_music: true,
             menu_bar_island_style: IslandStyle::Notch,
             menu_bar_notifications: false,
@@ -815,9 +812,6 @@ mod tests {
         assert_eq!(config.icon_size, 56);
         assert!(config.show_indicators && config.show_recents && config.bounce_on_open);
         assert!(config.check_updates);
-        // Files from before automatic updates get them, like new installs.
-        assert!(config.auto_update);
-        assert!(config.ai_usage);
         assert!(config.menu_bar_music);
         assert!(!config.accessory_battery);
         assert!(!config.show_minimized);

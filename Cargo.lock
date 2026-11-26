@@ -2256,12 +2256,9 @@ name = "muelle"
 version = "0.1.26"
 dependencies = [
  "anyhow",
- "chrono",
  "muelle-config",
  "muelle-core",
  "muelle-shell",
- "png",
- "reqwest",
  "serde",
  "serde_json",
  "windows",

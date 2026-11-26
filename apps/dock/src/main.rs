@@ -6,7 +6,6 @@
 //! - `muelle --restore`           restores the Windows taskbar
 //! - `muelle --autostart on|off`  enables or disables startup with Windows
 //! - `muelle --guard <pid>`       internal watchdog process
-//! - `muelle --usage-worker`      internal one-shot quota reader
 //! - `muelle --shell-worker`      internal one-shot shell action
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -35,7 +34,6 @@ mod scene;
 mod shell_work;
 mod strings;
 mod thumbnails;
-mod usage;
 
 use std::env;
 
@@ -91,7 +89,6 @@ fn main() -> Result<()> {
         }
         ["--autostart", "off"] => Ok(autostart::set(None)?),
         [guard::FLAG, pid] => guard::run(pid.parse().context("pid no válido")?),
-        ["--usage-worker"] => usage::worker_main(),
         [accessories::FLAG] => accessories::worker_main(None),
         [accessories::FLAG, visibility] => accessories::worker_main(Some(visibility)),
         [accessories::USB_FLAG] => accessories::usb_worker_main(),

@@ -37,7 +37,6 @@ export interface Config {
   menuBar: boolean;
   menuBarAutoHide: boolean;
   menuBarSmartHide?: boolean;
-  aiUsage: boolean;
   menuBarMusic: boolean;
   menuBarIslandStyle: IslandStyle;
   /** A bell at the right end of the menu bar that opens the notification center. */

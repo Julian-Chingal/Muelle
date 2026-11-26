@@ -651,17 +651,10 @@ export function App() {
                     onChange={(menuBarMusic) => update({ menuBarMusic })}
                   />
                 </SubRow>
-                <SubRow label={t.aiUsage} hint={t.aiUsageHint} open={config.menuBar}>
-                  <Toggle
-                    label={t.aiUsage}
-                    checked={config.aiUsage}
-                    onChange={(aiUsage) => update({ aiUsage })}
-                  />
-                </SubRow>
                 <SubRow
                   label={t.islandStyle}
                   stacked
-                  open={config.menuBar && (config.menuBarMusic || config.aiUsage)}
+                  open={config.menuBar && config.menuBarMusic}
                 >
                   <VisualChoices<IslandStyle>
                     label={t.islandStyle}

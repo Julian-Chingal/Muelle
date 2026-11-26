@@ -146,13 +146,6 @@ pub fn menu_bar_volume_press(x: f32, y: f32) {
     });
 }
 
-pub fn menu_bar_scrolled(point: POINT, delta: i16) -> bool {
-    with_app_value("desplazar uso de IA", |app| match &mut app.menubar {
-        Some(bar) => bar.scroll_usage_at(point, delta),
-        None => Ok(false),
-    })
-}
-
 pub fn menu_bar_volume_release(y: Option<f32>) -> bool {
     with_app_value("volumen", |app| match &mut app.menubar {
         Some(bar) => bar.release_volume(y),

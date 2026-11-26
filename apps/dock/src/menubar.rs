@@ -59,10 +59,9 @@ use windows::{
             PBT_POWERSETTINGCHANGE, PostMessageW, RegisterClassW, SWP_HIDEWINDOW, SWP_NOACTIVATE,
             SWP_SHOWWINDOW, SetCursor, SetTimer, SetWindowPos, SetWindowsHookExW,
             UnhookWindowsHookEx, WH_MOUSE_LL, WM_APP, WM_CAPTURECHANGED, WM_LBUTTONDOWN,
-            WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST,
-            WM_RBUTTONDOWN, WM_SETCURSOR, WM_SETTINGCHANGE, WM_TIMECHANGE, WM_TIMER,
-            WM_XBUTTONDOWN, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
-            WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+            WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MOUSEMOVE, WM_NCHITTEST, WM_RBUTTONDOWN, WM_SETCURSOR,
+            WM_SETTINGCHANGE, WM_TIMECHANGE, WM_TIMER, WM_XBUTTONDOWN, WNDCLASSW, WS_EX_NOACTIVATE,
+            WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
         },
     },
     core::{BOOL, Interface, h, w},
@@ -78,9 +77,6 @@ use crate::{
     media::{self, Control as MediaControl, Track},
     scene::Theme,
     strings,
-    usage::{
-        self, ActiveProviders, Monitor as UsageMonitor, Provider, ProviderUsage, Snapshot, State,
-    },
 };
 
 // Logical pixels.
@@ -122,13 +118,8 @@ const HIDE_MS: u32 = 130;
 // Recovery only; normal completion comes from the compositor, not this timer.
 const HIDE_FALLBACK_MS: u32 = HIDE_MS + 250;
 const HIDE_ANIMATION_DONE: u32 = WM_APP + 29;
-const ISLAND_SINGLE_WIDTH: f32 = 145.0;
-const ISLAND_EXPANDED_WIDTH: f32 = 440.0;
-const ISLAND_ROW_HEIGHT: f32 = 118.0;
 const BUBBLE_VERTICAL_INSET: f32 = 2.5;
 const BUBBLE_MUSIC_WIDTH: f32 = 164.0;
-const BUBBLE_PROVIDER_WIDTH: f32 = 62.0;
-const BUBBLE_USAGE_PADDING: f32 = 16.0;
 const PANEL_GAP: f32 = 5.0;
 const PANEL_RADIUS: f32 = 18.0;
 const PANEL_SHADOW_MARGIN: f32 = 20.0;
@@ -140,7 +131,6 @@ const APPBAR_CALLBACK: u32 = WM_APP + 20;
 const STATUS_CHANGED: u32 = WM_APP + 21;
 /// Posted by the bar to itself to update from the message loop.
 const TICK: u32 = WM_APP + 22;
-const USAGE_CHANGED: u32 = WM_APP + 23;
 const DISMISS_ISLAND: u32 = WM_APP + 24;
 /// Privacy activity or the user's taskbar preferences changed.
 const REGISTRY_CHANGED: u32 = WM_APP + 25;
@@ -255,11 +245,7 @@ struct Look {
     battery: Option<Battery>,
     status: Status,
     widgets: MenuBarWidgets,
-    usage: Snapshot,
-    usage_enabled: bool,
-    active_providers: ActiveProviders,
     panel: Option<Island>,
-    usage_refreshing: bool,
     track: Option<Track>,
 }
 
@@ -280,30 +266,10 @@ fn accessory_readings(snapshot: &AccessorySnapshot) -> [Option<AccessoryReading>
 }
 
 impl Look {
-    fn panel_content_height(&self) -> f32 {
+    fn panel_height(&self) -> f32 {
         match self.panel {
             Some(Island::Music) => 180.0,
-            Some(Island::Usage) => {
-                74.0 + Provider::ALL
-                    .into_iter()
-                    .filter(|provider| self.active_providers.has(*provider))
-                    .map(|provider| usage_row_height(self.usage.get(provider)))
-                    .sum::<f32>()
-            }
             None => 0.0,
-        }
-    }
-
-    fn panel_height(&self) -> f32 {
-        let natural = self.panel_content_height();
-        if self.panel == Some(Island::Usage) {
-            let available = (self.screen.bottom - self.screen.top) as f32 / self.scale
-                - HEIGHT
-                - PANEL_GAP
-                - PANEL_SHADOW_MARGIN;
-            natural.min(available.max(0.0))
-        } else {
-            natural
         }
     }
 }
@@ -311,7 +277,6 @@ impl Look {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Island {
     Music,
-    Usage,
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -339,25 +304,12 @@ enum IslandAction {
     Media(MediaControl),
     Volume(VolumeTrack),
     Mute,
-    Refresh,
-    ScrollUsage(i8),
 }
 
 #[derive(Clone, Copy)]
 struct IslandHit {
     bounds: (f32, f32, f32, f32),
     action: IslandAction,
-}
-
-/// A retained, clipped body. Wheel/arrow input only changes its transform and
-/// arrow opacity; no quota queries or redraws.
-struct UsageViewport {
-    content: ContainerVisual,
-    maximum: f32,
-    scale: f32,
-    bounds: (f32, f32, f32, f32),
-    up: SpriteVisual,
-    down: SpriteVisual,
 }
 
 impl IslandHit {
@@ -534,9 +486,6 @@ pub struct MenuBar {
     /// What the clock opens (`Config::menu_bar_clock_target`). Not drawn, so
     /// it lives outside `widgets` and changing it redraws nothing.
     clock_target: Option<String>,
-    usage: Option<UsageMonitor>,
-    /// Where each provider sits in the closed island, as screen x.
-    usage_anchors: Vec<(Provider, i32)>,
     /// A moment for the crab, waiting for the dock (see `take_cue`).
     cue: Option<(mascot::Act, i32)>,
     /// Whether the network was up at the last reading (`None` before the
@@ -557,8 +506,6 @@ pub struct MenuBar {
     volume_controls: Option<VolumeControls>,
     progress_controls: Option<ProgressControls>,
     progress_timer: bool,
-    usage_scroll: f32,
-    usage_viewport: Option<UsageViewport>,
     suppress_volume_release: bool,
     panel: Option<Island>,
     visual_height: i32,
@@ -598,17 +545,6 @@ unsafe extern "system" fn bar_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -
             app::menu_bar_pointer_moved(f32::from(x), f32::from(y));
         }
         WM_MOUSELEAVE => app::menu_bar_check_pointer(),
-        WM_MOUSEWHEEL => {
-            let delta = (w.0 >> 16) as u16 as i16;
-            let point = POINT {
-                x: (l.0 & 0xFFFF) as i16 as i32,
-                y: (l.0 >> 16) as i16 as i32,
-            };
-            if app::menu_bar_scrolled(point, delta) {
-                return LRESULT(0);
-            }
-            return unsafe { DefWindowProcW(hwnd, msg, w, l) };
-        }
         WM_TIMER if w.0 == POINTER_TIMER => app::menu_bar_check_pointer(),
         WM_TIMER if w.0 == VOLUME_TIMER => app::menu_bar_volume_flush(),
         WM_TIMER if w.0 == PROGRESS_TIMER => app::menu_bar_progress_tick(),
@@ -672,8 +608,7 @@ unsafe extern "system" fn bar_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -
         // updating then was dropped. From the message loop the dock is never
         // busy, and a burst of them makes a single update.
         // WM_TIMECHANGE: the clock or time zone was changed.
-        WM_TIMER | WM_POWERBROADCAST | WM_TIMECHANGE | STATUS_CHANGED | USAGE_CHANGED
-        | WM_SETTINGCHANGE => {
+        WM_TIMER | WM_POWERBROADCAST | WM_TIMECHANGE | STATUS_CHANGED | WM_SETTINGCHANGE => {
             if msg == WM_POWERBROADCAST && matches!(w.0, 7 | 18) {
                 app::menu_bar_accessories_reset();
             }
@@ -867,275 +802,9 @@ fn add_panel_text(
     Ok(label)
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Right-aligned panel labels choose typography and placement together"
-)]
-fn add_panel_text_right(
-    gfx: &Gfx,
-    layers: &VisualCollection,
-    value: &str,
-    right: f32,
-    y: f32,
-    scale: f32,
-    font_size: f32,
-    bold: bool,
-    ink: Ink,
-    opacity: f32,
-) -> Result<LabelBrush> {
-    let label = gfx.text_brush_sized(value, scale, font_size, bold, ink)?;
-    add_visual(
-        &gfx.compositor,
-        layers,
-        &label.brush.cast()?,
-        right - label.width,
-        y,
-        label.width,
-        label.height,
-    )?
-    .SetOpacity(opacity)?;
-    Ok(label)
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Each provider row draws its own colors, data and measured rectangle"
-)]
-fn draw_usage_row(
-    gfx: &Gfx,
-    layers: &VisualCollection,
-    provider: Provider,
-    usage: &ProviderUsage,
-    accent: Color,
-    scale: f32,
-    light: bool,
-    island_width: f32,
-    y: f32,
-) -> Result<()> {
-    let c = &gfx.compositor;
-    let px = |logical: f32| (logical * scale).round();
-    let ink = if light { Ink::Dark } else { Ink::Light };
-    let text = strings::text();
-    let left = px(23.0);
-    let width = island_width - px(46.0);
-    let right = left + width;
-    add_rounded_box(
-        c,
-        layers,
-        left + px(12.0),
-        y + px(11.0),
-        px(32.0),
-        px(32.0),
-        px(10.0),
-        rgba(accent.R, accent.G, accent.B, if light { 31 } else { 41 }),
-        None,
-    )?;
-    if let Some(image) = usage::logo(provider) {
-        let icon_size = px(20.0) as u32;
-        let image_brush = gfx.icon_brush(image, icon_size)?;
-        let brush: CompositionBrush =
-            if !matches!(provider, Provider::Claude | Provider::Gemini) && light {
-                let tinted = c.CreateMaskBrush()?;
-                tinted.SetMask(&image_brush)?;
-                tinted.SetSource(&c.CreateColorBrushWithColor(rgba(27, 34, 45, 255))?)?;
-                tinted.cast()?
-            } else {
-                image_brush.cast()?
-            };
-        add_visual(
-            c,
-            layers,
-            &brush,
-            left + px(18.0),
-            y + px(17.0),
-            icon_size as f32,
-            icon_size as f32,
-        )?;
-    }
-    add_panel_text(
-        gfx,
-        layers,
-        provider.name(),
-        left + px(53.0),
-        y + px(10.0),
-        scale,
-        14.0,
-        true,
-        ink,
-        1.0,
-    )?;
-    if let Some(main) = usage.main_window() {
-        add_panel_text(
-            gfx,
-            layers,
-            &main.title(),
-            left + px(53.0),
-            y + px(30.0),
-            scale,
-            11.5,
-            false,
-            ink,
-            0.72,
-        )?;
-        add_panel_text_right(
-            gfx,
-            layers,
-            &format!("{}%", main.used_percent),
-            right - px(14.0),
-            y + px(6.0),
-            scale,
-            20.0,
-            true,
-            ink,
-            1.0,
-        )?;
-        add_panel_text_right(
-            gfx,
-            layers,
-            text.usage_used,
-            right - px(15.0),
-            y + px(31.0),
-            scale,
-            11.0,
-            false,
-            ink,
-            0.7,
-        )?;
-        let track_left = left + px(14.0);
-        let track_width = width - px(28.0);
-        let track_y = y + px(53.0);
-        add_rounded_box(
-            c,
-            layers,
-            track_left,
-            track_y,
-            track_width,
-            px(6.0),
-            px(3.0),
-            if light {
-                rgba(54, 73, 95, 43)
-            } else {
-                rgba(224, 235, 248, 48)
-            },
-            None,
-        )?;
-        let fill = track_width * f32::from(main.used_percent) / 100.0;
-        if fill > 0.0 {
-            add_rounded_box(
-                c,
-                layers,
-                track_left,
-                track_y,
-                fill,
-                px(6.0),
-                px(3.0),
-                accent,
-                None,
-            )?;
-        }
-        if let Some(reset) = main.reset_text() {
-            add_panel_text_right(
-                gfx,
-                layers,
-                &format!("{} {reset}", text.usage_resets),
-                right - px(14.0),
-                y + px(64.0),
-                scale,
-                11.0,
-                false,
-                ink,
-                0.78,
-            )?;
-        }
-        if usage.state == State::Unavailable
-            || usage.age_minutes().is_some_and(|minutes| minutes > 5)
-        {
-            add_panel_text(
-                gfx,
-                layers,
-                text.usage_stale,
-                left + px(14.0),
-                y + px(64.0),
-                scale,
-                11.0,
-                false,
-                ink,
-                0.7,
-            )?;
-        }
-        for (index, secondary) in usage.windows.iter().skip(1).enumerate() {
-            add_visual(
-                c,
-                layers,
-                &c.CreateColorBrushWithColor(if light {
-                    rgba(50, 68, 88, 24)
-                } else {
-                    rgba(228, 236, 247, 29)
-                })?
-                .cast()?,
-                left + px(14.0),
-                y + px(83.0 + index as f32 * 26.0),
-                width - px(28.0),
-                px(1.0),
-            )?;
-            add_panel_text(
-                gfx,
-                layers,
-                &format!("{} · {}%", secondary.title(), secondary.used_percent),
-                left + px(14.0),
-                y + px(87.0 + index as f32 * 26.0),
-                scale,
-                11.5,
-                true,
-                ink,
-                0.94,
-            )?;
-            if let Some(reset) = secondary.reset_text() {
-                add_panel_text_right(
-                    gfx,
-                    layers,
-                    &format!("{} {reset}", text.usage_resets),
-                    right - px(14.0),
-                    y + px(87.0 + index as f32 * 26.0),
-                    scale,
-                    11.5,
-                    false,
-                    ink,
-                    0.76,
-                )?;
-            }
-        }
-    } else {
-        let message = match usage.state {
-            State::Loading => text.usage_loading,
-            State::SignIn if provider == Provider::Claude => text.usage_claude_sign_in,
-            State::SignIn => text.usage_sign_in,
-            State::Ready | State::Unavailable => text.usage_unavailable,
-        };
-        add_panel_text(
-            gfx,
-            layers,
-            message,
-            left + px(53.0),
-            y + px(43.0),
-            scale,
-            12.0,
-            false,
-            ink,
-            0.72,
-        )?;
-    }
-    Ok(())
-}
-
-fn usage_row_height(usage: &ProviderUsage) -> f32 {
-    ISLAND_ROW_HEIGHT + usage.windows.len().saturating_sub(2) as f32 * 26.0
-}
-
 impl MenuBar {
     pub fn create(
         gfx: &Gfx,
-        usage_enabled: bool,
         media_enabled: bool,
         auto_hide: bool,
         widgets: MenuBarWidgets,
@@ -1222,8 +891,6 @@ impl MenuBar {
             },
             widgets,
             clock_target: None,
-            usage: usage_enabled.then(|| UsageMonitor::new(hwnd.0 as isize, USAGE_CHANGED)),
-            usage_anchors: Vec::new(),
             cue: None,
             online: None,
             offline_since: None,
@@ -1239,8 +906,6 @@ impl MenuBar {
             volume_controls: None,
             progress_controls: None,
             progress_timer: false,
-            usage_scroll: 0.0,
-            usage_viewport: None,
             suppress_volume_release: false,
             panel: None,
             visual_height: 0,
@@ -1377,14 +1042,6 @@ impl MenuBar {
             }
         }
         // Content is not refreshed while hidden.
-        self.refresh(gfx)
-    }
-
-    pub fn set_usage_enabled(&mut self, gfx: &Gfx, enabled: bool) -> Result<()> {
-        if self.usage.is_some() == enabled {
-            return Ok(());
-        }
-        self.usage = enabled.then(|| UsageMonitor::new(self.hwnd.0 as isize, USAGE_CHANGED));
         self.refresh(gfx)
     }
 
@@ -1960,11 +1617,6 @@ impl MenuBar {
                         unsafe { TrackMouseEvent(&mut track)? };
                     }
                 }
-                IslandAction::Refresh => {
-                    if let Some(usage) = &mut self.usage {
-                        usage.refresh(true);
-                    }
-                }
                 IslandAction::Media(control) => {
                     if let Some(media) = &self.media
                         && let Some(track) = self.look.as_ref().and_then(|look| look.track.as_ref())
@@ -1979,10 +1631,6 @@ impl MenuBar {
                         audio.toggle_mute()?;
                     }
                     return self.audio_changed(gfx);
-                }
-                IslandAction::ScrollUsage(direction) => {
-                    self.scroll_usage(f32::from(direction) * 72.0)?;
-                    return Ok(());
                 }
             }
             return self.refresh(gfx);
@@ -2062,23 +1710,8 @@ impl MenuBar {
         let Some(monitor) = system::primary_monitor() else {
             return Ok(());
         };
-        let active_providers = if self.usage.is_some() {
-            usage::active_providers()
-        } else {
-            ActiveProviders::default()
-        };
         let track = self.media.as_ref().and_then(media::Watch::snapshot);
-        self.panel = available_panel(self.panel, track.is_some(), active_providers.any());
-        if !active_providers.any() {
-            if let Some(usage) = &mut self.usage {
-                usage.mark_inactive();
-            }
-        } else if self.visible
-            && (!self.auto_hide || self.revealed)
-            && let Some(usage) = &mut self.usage
-        {
-            usage.refresh(false);
-        }
+        self.panel = available_panel(self.panel, track.is_some());
         let appearance = appearance::menu_bar();
         let look = Look {
             accessories: self.accessories.as_ref().map_or([None, None], |monitor| {
@@ -2097,14 +1730,7 @@ impl MenuBar {
             battery: system::battery(),
             status: self.status,
             widgets: self.widgets,
-            usage: self
-                .usage
-                .as_ref()
-                .map_or_else(Snapshot::default, UsageMonitor::snapshot),
-            usage_enabled: self.usage.is_some() && active_providers.any(),
-            active_providers,
             panel: self.panel,
-            usage_refreshing: self.usage.as_ref().is_some_and(UsageMonitor::is_refreshing),
             track,
         };
         self.apply_look(gfx, look)
@@ -2204,19 +1830,14 @@ impl MenuBar {
             self.look = Some(look);
             return self.progress_tick(gfx);
         }
-        self.panel = available_panel(self.panel, look.track.is_some(), look.usage_enabled);
+        self.panel = available_panel(self.panel, look.track.is_some());
         look.panel = self.panel;
         self.apply_look(gfx, look)
     }
 
     fn apply_look(&mut self, gfx: &Gfx, mut look: Look) -> Result<()> {
-        look.active_providers = look.usage.visible_providers(look.active_providers);
-        look.usage_enabled &= look.active_providers.any();
-        self.panel = available_panel(look.panel, look.track.is_some(), look.usage_enabled);
+        self.panel = available_panel(look.panel, look.track.is_some());
         look.panel = self.panel;
-        if look.panel != Some(Island::Usage) {
-            self.usage_scroll = 0.0;
-        }
         let moved = self
             .look
             .as_ref()
@@ -2227,10 +1848,6 @@ impl MenuBar {
         if self.look.as_ref() == Some(&look) {
             return Ok(());
         }
-        let moment = self
-            .look
-            .as_ref()
-            .and_then(|old| usage_moment(&old.usage, &look.usage, &look.active_providers));
         self.build(gfx, &look)?;
         // A crowded bar can have no room even for a compact trigger. Do not
         // keep a ghost popup that reappears by itself when space returns.
@@ -2241,11 +1858,6 @@ impl MenuBar {
         }
         self.look = Some(look);
         self.sync_progress_watch();
-        if let Some((provider, act)) = moment
-            && let Some(&(_, x)) = self.usage_anchors.iter().find(|(p, _)| *p == provider)
-        {
-            self.cue = Some((act, x));
-        }
         Ok(())
     }
 
@@ -2585,7 +2197,6 @@ impl MenuBar {
         self.island_hits.clear();
         self.volume_controls = None;
         self.progress_controls = None;
-        self.usage_viewport = None;
         self.triggers_span = Span::default();
         self.panel_span = Span::default();
         self.draw_island(gfx, look, &layers, width, height, left_end, right)?;
@@ -2695,7 +2306,6 @@ impl MenuBar {
                 width / 2.0,
                 look.scale,
                 look.track.is_some(),
-                look.active_providers.count(),
             ),
             IslandStyle::Bubble => bubble_trigger_layout(
                 Span {
@@ -2704,325 +2314,97 @@ impl MenuBar {
                 },
                 look.scale,
                 prepared_music.as_ref().map(|music| music.width),
-                look.active_providers.count(),
             ),
         };
-        let [(_, music), (_, usage)] = triggers;
-        let (Some(first), Some(last)) = (music.or(usage), usage.or(music)) else {
+        let Some(span) = triggers else {
             return Ok(());
         };
-        self.triggers_span = Span {
-            left: first.left,
-            right: last.right,
-        };
+        self.triggers_span = span;
         let geometry = IslandGeometry::new(self.triggers_span, 0.0, look);
-        let (compact, compact_height, divider_inset) = match style {
+        let (compact, compact_height) = match style {
             IslandStyle::Notch => (
                 island_surface(gfx, look, layers, geometry, bar_height)?,
                 bar_height,
-                px(7.0),
             ),
             IslandStyle::Bubble => {
                 let (surface, pill_height) =
                     bubble_surface(gfx, look, layers, geometry, bar_height)?;
-                (surface, pill_height, px(5.0))
+                (surface, pill_height)
             }
         };
-        let divider = music
-            .zip(usage)
-            .map(|(music, usage)| ((music.right + usage.left) / 2.0).round());
         let c = &gfx.compositor;
-        if let Some(x) = divider {
-            add_visual(
-                c,
-                &compact,
-                &c.CreateColorBrushWithColor(geometry.border())?.cast()?,
-                x - self.triggers_span.left,
-                divider_inset,
-                px(1.0).max(1.0),
-                (compact_height - 2.0 * divider_inset).max(1.0),
-            )?;
-        }
-        let providers = island_providers(look);
-        for (kind, span) in triggers {
-            let Some(span) = span else {
-                continue;
-            };
-            let geometry = IslandGeometry::new(span, 0.0, look);
-            let segment = c.CreateContainerVisual()?;
-            segment.SetSize(Vector2::new(geometry.width, compact_height))?;
-            segment.SetOffset(Vector3::new(span.left - self.triggers_span.left, 0.0, 0.0))?;
-            let content = segment.Children()?;
-            compact.InsertAtTop(&segment)?;
-            match kind {
-                Island::Music => {
-                    if let Some(track) = &look.track {
-                        match style {
-                            IslandStyle::Notch => draw_compact_player(
-                                gfx,
-                                &content,
-                                geometry,
-                                geometry.width,
-                                compact_height,
-                                track,
-                                cover.as_ref(),
-                            )?,
-                            IslandStyle::Bubble => {
-                                if let Some(prepared) = &prepared_music {
-                                    draw_bubble_player(
-                                        gfx,
-                                        &content,
-                                        geometry,
-                                        compact_height,
-                                        track,
-                                        prepared,
-                                        cover.as_ref(),
-                                    )?;
-                                }
-                            }
-                        }
-                    }
-                }
-                Island::Usage => {
-                    let anchors = match style {
-                        IslandStyle::Notch => {
-                            draw_compact_usage(gfx, &content, geometry, compact_height, &providers)?
-                        }
-                        IslandStyle::Bubble => {
-                            draw_bubble_usage(gfx, &content, geometry, compact_height, &providers)?
-                        }
-                    };
-                    self.usage_anchors = anchors
-                        .into_iter()
-                        .map(|(provider, x)| (provider, look.screen.left + (span.left + x) as i32))
-                        .collect();
-                }
-            }
-            let (left, right) = match kind {
-                Island::Music => (span.left, divider.unwrap_or(span.right)),
-                Island::Usage => (divider.unwrap_or(span.left), span.right),
-            };
-            self.island_hits.push(IslandHit {
-                bounds: (left, 0.0, right, bar_height),
-                action: IslandAction::Toggle(kind),
-            });
-            if look.panel != Some(kind) {
-                continue;
-            }
-            let desired = px(match kind {
-                Island::Music => 360.0,
-                Island::Usage => ISLAND_EXPANDED_WIDTH,
-            });
-            self.panel_span = match style {
-                IslandStyle::Notch => panel_span(span, width, desired),
-                IslandStyle::Bubble => bubble_panel_span(self.triggers_span, width, desired),
-            };
-            let volume_span = if kind == Island::Music && look.status.volume.is_some() {
-                let (music, volume) = volume_popover_layout(self.panel_span, width, look.scale);
-                self.panel_span = music;
-                Some(volume)
-            } else {
-                None
-            };
-            let geometry = IslandGeometry::new(self.panel_span, bar_height + px(PANEL_GAP), look);
-            let height = px(look.panel_height());
-            let theme = Theme::for_popup(look.light, look.glass);
-            let content = popup_surface(gfx, theme, layers, geometry, height, px(PANEL_RADIUS))?;
-            match kind {
-                Island::Music => {
-                    if let Some(track) = &look.track {
-                        self.draw_player(gfx, &content, geometry, track, cover.as_ref())?;
-                    }
-                    if let Some(span) = volume_span {
-                        let volume_geometry = IslandGeometry::new(span, geometry.top, look);
-                        let volume_content = popup_surface(
+        let geometry = IslandGeometry::new(span, 0.0, look);
+        let segment = c.CreateContainerVisual()?;
+        segment.SetSize(Vector2::new(geometry.width, compact_height))?;
+        let content = segment.Children()?;
+        compact.InsertAtTop(&segment)?;
+        if let Some(track) = &look.track {
+            match style {
+                IslandStyle::Notch => draw_compact_player(
+                    gfx,
+                    &content,
+                    geometry,
+                    geometry.width,
+                    compact_height,
+                    track,
+                    cover.as_ref(),
+                )?,
+                IslandStyle::Bubble => {
+                    if let Some(prepared) = &prepared_music {
+                        draw_bubble_player(
                             gfx,
-                            theme,
-                            layers,
-                            volume_geometry,
-                            height,
-                            span.width() / 2.0,
+                            &content,
+                            geometry,
+                            compact_height,
+                            track,
+                            prepared,
+                            cover.as_ref(),
                         )?;
-                        self.draw_volume_capsule(gfx, &volume_content, volume_geometry)?;
-                        // Keep the small bridge between surfaces interactive,
-                        // so moving towards the volume does not dismiss it.
-                        self.panel_span.left = self.panel_span.left.min(span.left);
-                        self.panel_span.right = self.panel_span.right.max(span.right);
                     }
-                }
-                Island::Usage => {
-                    self.draw_usage_panel(gfx, &content, geometry, height, look, &providers)?
                 }
             }
         }
-        Ok(())
-    }
-
-    fn draw_usage_panel(
-        &mut self,
-        gfx: &Gfx,
-        content: &VisualCollection,
-        geometry: IslandGeometry,
-        island_height: f32,
-        look: &Look,
-        providers: &[IslandProvider<'_>],
-    ) -> Result<()> {
-        let c = &gfx.compositor;
-        let scale = geometry.scale;
-        let px = |v| geometry.px(v);
-        let island_width = geometry.width;
-        let ink = geometry.ink();
-        let title = strings::text();
-        add_panel_text(
-            gfx,
-            content,
-            title.usage_title,
-            px(28.0),
-            px(15.0),
-            scale,
-            13.0,
-            true,
-            ink,
-            0.94,
-        )?;
-        let button_text = if look.usage_refreshing {
-            title.usage_refreshing
-        } else {
-            title.usage_refresh
+        self.island_hits.push(IslandHit {
+            bounds: (span.left, 0.0, span.right, bar_height),
+            action: IslandAction::Toggle(Island::Music),
+        });
+        if look.panel != Some(Island::Music) {
+            return Ok(());
+        }
+        let desired = px(360.0);
+        self.panel_span = match style {
+            IslandStyle::Notch => panel_span(span, width, desired),
+            IslandStyle::Bubble => bubble_panel_span(self.triggers_span, width, desired),
         };
-        let button_label = gfx.text_brush_sized(button_text, scale, 11.5, true, ink)?;
-        let button_width = button_label.width + px(20.0);
-        let button_height = px(27.0);
-        let button_left = island_width - px(23.0) - button_width;
-        let button_top = px(8.0);
-        add_rounded_box(
-            c,
-            content,
-            button_left,
-            button_top,
-            button_width,
-            button_height,
-            px(13.5),
-            geometry.control_fill(),
-            Some(geometry.border()),
-        )?;
-        add_visual(
-            c,
-            content,
-            &button_label.brush.cast()?,
-            button_left + px(10.0),
-            button_top + (button_height - button_label.height) / 2.0,
-            button_label.width,
-            button_label.height,
-        )?;
-        if !look.usage_refreshing {
-            self.island_hits.push(geometry.hit(
-                button_left,
-                button_top,
-                button_width,
-                button_height,
-                IslandAction::Refresh,
-            ));
+        let volume_span = if look.status.volume.is_some() {
+            let (music, volume) = volume_popover_layout(self.panel_span, width, look.scale);
+            self.panel_span = music;
+            Some(volume)
+        } else {
+            None
+        };
+        let geometry = IslandGeometry::new(self.panel_span, bar_height + px(PANEL_GAP), look);
+        let height = px(look.panel_height());
+        let theme = Theme::for_popup(look.light, look.glass);
+        let content = popup_surface(gfx, theme, layers, geometry, height, px(PANEL_RADIUS))?;
+        if let Some(track) = &look.track {
+            self.draw_player(gfx, &content, geometry, track, cover.as_ref())?;
         }
-        let body_top = px(42.0);
-        let body_height = (island_height - body_top - px(26.0)).max(0.0);
-        let content_height = px((look.panel_content_height() - 68.0).max(0.0));
-        let maximum = ((content_height - body_height) / scale).max(0.0);
-        self.usage_scroll = self.usage_scroll.clamp(0.0, maximum);
-        let viewport = c.CreateContainerVisual()?;
-        viewport.SetOffset(Vector3::new(0.0, body_top, 0.0))?;
-        viewport.SetSize(Vector2::new(island_width, body_height))?;
-        viewport.SetClip(&c.CreateInsetClip()?)?;
-        let body = c.CreateContainerVisual()?;
-        body.SetSize(Vector2::new(island_width, content_height))?;
-        body.SetOffset(Vector3::new(0.0, -px(self.usage_scroll), 0.0))?;
-        viewport.Children()?.InsertAtTop(&body)?;
-        content.InsertAtTop(&viewport)?;
-        let rows = body.Children()?;
-        let mut row_top = 6.0;
-        for (provider, usage, accent) in providers {
-            let y = px(row_top);
-            row_top += usage_row_height(usage);
-            let inset = px(23.0);
-            add_visual(
-                c,
-                &rows,
-                &c.CreateColorBrushWithColor(geometry.border())?.cast()?,
-                inset,
-                y - px(6.0),
-                island_width - 2.0 * inset,
-                1.0,
-            )?;
-            draw_usage_row(
+        if let Some(span) = volume_span {
+            let volume_geometry = IslandGeometry::new(span, geometry.top, look);
+            let volume_content = popup_surface(
                 gfx,
-                &rows,
-                *provider,
-                usage,
-                *accent,
-                scale,
-                look.light,
-                island_width,
-                y,
+                theme,
+                layers,
+                volume_geometry,
+                height,
+                span.width() / 2.0,
             )?;
-        }
-        let bounds = (
-            geometry.left,
-            geometry.top + body_top,
-            geometry.left + island_width,
-            geometry.top + body_top + body_height,
-        );
-        if maximum > 0.0 {
-            let [up, down] = [
-                ('\u{E70E}', body_top + px(2.0), -1),
-                ('\u{E70D}', body_top + body_height - px(22.0), 1),
-            ]
-            .map(|(symbol, top, direction)| -> Result<SpriteVisual> {
-                let label = gfx.glyph_brush(&[(symbol, 1.0)], scale * 0.7, ink)?;
-                let visual = add_visual(
-                    c,
-                    content,
-                    &label.brush.cast()?,
-                    island_width - px(22.0) + (px(18.0) - label.width) / 2.0,
-                    top + (px(20.0) - label.height) / 2.0,
-                    label.width,
-                    label.height,
-                )?;
-                self.island_hits.push(geometry.hit(
-                    island_width - px(22.0),
-                    top,
-                    px(18.0),
-                    px(20.0),
-                    IslandAction::ScrollUsage(direction),
-                ));
-                Ok(visual)
-            });
-            self.usage_viewport = Some(UsageViewport {
-                content: body,
-                maximum,
-                scale,
-                bounds,
-                up: up?,
-                down: down?,
-            });
-            self.position_usage_body()?;
-        }
-        let newest_age = providers
-            .iter()
-            .filter_map(|provider| provider.1.age_minutes())
-            .min();
-        if let Some(minutes) = newest_age {
-            let status = format!("{} {minutes} min", title.usage_updated);
-            let label = gfx.text_brush_sized(&status, scale, 11.0, false, ink)?;
-            add_visual(
-                c,
-                content,
-                &label.brush.cast()?,
-                (island_width - label.width) / 2.0,
-                island_height - px(21.0),
-                label.width,
-                label.height,
-            )?
-            .SetOpacity(0.53)?;
+            self.draw_volume_capsule(gfx, &volume_content, volume_geometry)?;
+            // Keep the small bridge between surfaces interactive, so moving
+            // towards the volume does not dismiss it.
+            self.panel_span.left = self.panel_span.left.min(span.left);
+            self.panel_span.right = self.panel_span.right.max(span.right);
         }
         Ok(())
     }
@@ -3414,57 +2796,6 @@ impl MenuBar {
         self.paint_volume_preview(gfx)
     }
 
-    pub fn scroll_usage_at(&mut self, point: POINT, delta: i16) -> Result<bool> {
-        if !self.visible || (self.auto_hide && !self.revealed) || delta == 0 {
-            return Ok(false);
-        }
-        let Some(viewport) = &self.usage_viewport else {
-            return Ok(false);
-        };
-        let (x, y) = (
-            (point.x - self.bounds.left) as f32,
-            (point.y - self.bounds.top) as f32,
-        );
-        let (left, top, right, bottom) = viewport.bounds;
-        if x < left || x >= right || y < top || y >= bottom {
-            return Ok(false);
-        }
-        self.scroll_usage(-f32::from(delta) / 120.0 * 48.0)
-    }
-
-    fn scroll_usage(&mut self, delta: f32) -> Result<bool> {
-        let Some(viewport) = &self.usage_viewport else {
-            return Ok(false);
-        };
-        let next = (self.usage_scroll + delta).clamp(0.0, viewport.maximum);
-        if next != self.usage_scroll {
-            self.usage_scroll = next;
-            self.position_usage_body()?;
-        }
-        Ok(true)
-    }
-
-    fn position_usage_body(&mut self) -> Result<()> {
-        let Some(viewport) = &self.usage_viewport else {
-            return Ok(());
-        };
-        let offset = (self.usage_scroll * viewport.scale).round();
-        viewport
-            .content
-            .SetOffset(Vector3::new(0.0, -offset, 0.0))?;
-        viewport
-            .up
-            .SetOpacity(if self.usage_scroll > 0.0 { 0.8 } else { 0.22 })?;
-        viewport
-            .down
-            .SetOpacity(if self.usage_scroll < viewport.maximum {
-                0.8
-            } else {
-                0.22
-            })?;
-        Ok(())
-    }
-
     fn paint_volume_preview(&mut self, gfx: &Gfx) -> Result<()> {
         if let Some(percent) = self.volume_target
             && let Some(controls) = &mut self.volume_controls
@@ -3649,110 +2980,40 @@ fn toggle_panel(open: Option<Island>, clicked: Island) -> Option<Island> {
     (open != Some(clicked)).then_some(clicked)
 }
 
-fn available_panel(open: Option<Island>, music: bool, usage: bool) -> Option<Island> {
+fn available_panel(open: Option<Island>, music: bool) -> Option<Island> {
     open.filter(|island| match island {
         Island::Music => music,
-        Island::Usage => usage,
     })
 }
 
-fn trigger_layout(
-    bounds: Span,
-    center: f32,
-    scale: f32,
-    music: bool,
-    providers: usize,
-) -> [(Island, Option<Span>); 2] {
+fn trigger_layout(bounds: Span, center: f32, scale: f32, music: bool) -> Option<Span> {
     let px = |v: f32| (v * scale).round();
-    let mut result = [(Island::Music, None), (Island::Usage, None)];
-    let gap = if music && providers > 0 { px(8.0) } else { 0.0 };
-    let music_width = if music { px(214.0) } else { 0.0 };
-    let usage_width = match providers {
-        0 => 0.0,
-        1 => px(ISLAND_SINGLE_WIDTH),
-        count => px(134.0 * count as f32),
-    };
-    let total = music_width + usage_width;
-    let available = (bounds.width() - gap).min(total);
-    if total == 0.0 || available < px(if gap > 0.0 { 85.0 } else { 42.0 }) {
-        return result;
+    let width = bounds.width().min(px(214.0));
+    if !music || width < px(42.0) {
+        return None;
     }
-    let music_width = if gap > 0.0 {
-        (available * music_width / total)
-            .round()
-            .clamp(px(42.0), available - px(42.0))
-    } else if music {
-        available
-    } else {
-        0.0
-    };
-    let left = (center - (available + gap) / 2.0)
-        .clamp(
-            bounds.left,
-            (bounds.right - available - gap).max(bounds.left),
-        )
+    let left = (center - width / 2.0)
+        .clamp(bounds.left, (bounds.right - width).max(bounds.left))
         .round();
-    if music {
-        result[0].1 = Some(Span {
-            left,
-            right: left + music_width,
-        });
-    }
-    if providers > 0 {
-        result[1].1 = Some(Span {
-            left: left + music_width + gap,
-            right: left + available + gap,
-        });
-    }
-    result
+    Some(Span {
+        left,
+        right: left + width,
+    })
 }
 
-fn bubble_trigger_layout(
-    bounds: Span,
-    scale: f32,
-    music_width: Option<f32>,
-    providers: usize,
-) -> [(Island, Option<Span>); 2] {
+fn bubble_trigger_layout(bounds: Span, scale: f32, music_width: Option<f32>) -> Option<Span> {
     let px = |v: f32| (v * scale).round();
-    let mut result = [(Island::Music, None), (Island::Usage, None)];
-    let music = music_width.is_some();
-    let gap = if music && providers > 0 { px(8.0) } else { 0.0 };
-    let music_width = music_width
-        .map(|width| width.clamp(px(36.0), px(BUBBLE_MUSIC_WIDTH)))
-        .unwrap_or(0.0);
-    let usage_width = if providers > 0 {
-        px(BUBBLE_USAGE_PADDING + BUBBLE_PROVIDER_WIDTH * providers as f32)
-    } else {
-        0.0
-    };
-    let total = music_width + usage_width;
-    let available = (bounds.width() - gap).min(total);
-    if total == 0.0 || available < px(if gap > 0.0 { 72.0 } else { 36.0 }) {
-        return result;
+    let width = music_width?
+        .clamp(px(36.0), px(BUBBLE_MUSIC_WIDTH))
+        .min(bounds.width());
+    if width < px(36.0) {
+        return None;
     }
-    let music_width = if gap > 0.0 {
-        (available * music_width / total)
-            .round()
-            .clamp(px(36.0), available - px(36.0))
-    } else if music {
-        available
-    } else {
-        0.0
-    };
-    let left = (bounds.right - available - gap).max(bounds.left).round();
-    if music {
-        result[0].1 = Some(Span {
-            left,
-            right: left + music_width,
-        });
-    }
-    if providers > 0 {
-        result[1].1 = Some(Span {
-            left: left + music_width + gap,
-            right: left + available + gap,
-        });
-    }
-    result
+    let left = (bounds.right - width).max(bounds.left).round();
+    Some(Span {
+        left,
+        right: left + width,
+    })
 }
 
 fn panel_span(trigger: Span, screen_width: f32, desired: f32) -> Span {
@@ -3775,25 +3036,6 @@ fn bubble_panel_span(anchor: Span, screen_width: f32, desired: f32) -> Span {
         left,
         right: left + width,
     }
-}
-
-type IslandProvider<'a> = (Provider, &'a ProviderUsage, Color);
-
-fn island_providers(look: &Look) -> Vec<IslandProvider<'_>> {
-    Provider::ALL
-        .into_iter()
-        .filter(|provider| look.active_providers.has(*provider))
-        .map(|provider| {
-            let accent = match provider {
-                Provider::Claude => rgba(217, 119, 87, 255),
-                Provider::Codex => rgba(135, 190, 245, 255),
-                Provider::OpenCode => rgba(132, 196, 166, 255),
-                Provider::Gemini => rgba(111, 146, 255, 255),
-                Provider::Zai => rgba(79, 110, 247, 255),
-            };
-            (provider, look.usage.get(provider), accent)
-        })
-        .collect()
 }
 
 fn popup_surface(
@@ -3975,245 +3217,6 @@ fn bubble_surface(
 
     layers.InsertAtTop(&bubble)?;
     Ok((content, pill_height))
-}
-
-/// Draws the providers in the closed island and returns where each one's
-/// figure sits (its centre, from the segment's left edge), for the crab.
-/// The moment an AI plan's figure crosses a line worth showing, comparing
-/// the previous update with this one: a limit reset to 0 % (after being in
-/// use), past 90 %, or at 100 %. Nothing on the first figures after starting,
-/// which have nothing to compare with.
-fn usage_moment(
-    old: &usage::Snapshot,
-    new: &usage::Snapshot,
-    active: &ActiveProviders,
-) -> Option<(Provider, mascot::Act)> {
-    Provider::ALL
-        .into_iter()
-        .filter(|p| active.has(*p))
-        .find_map(|provider| {
-            let previous = old.get(provider);
-            let current = new.get(provider);
-            if previous.state != State::Ready || current.state != State::Ready {
-                return None;
-            }
-            let before_window = previous.main_window()?;
-            let now_window = current.main_window()?;
-            if before_window.minutes != now_window.minutes
-                || before_window.label != now_window.label
-            {
-                return None;
-            }
-            if let (Some(before), Some(now)) = (previous.fetched_at, current.fetched_at)
-                && now <= before
-            {
-                return None;
-            }
-            let before = before_window.used_percent;
-            let now = now_window.used_percent;
-            let act = if now >= 100 && before < 100 {
-                mascot::Act::Exhausted
-            } else if now >= 90 && before < 90 {
-                mascot::Act::Nervous
-            } else if now <= 1 && before >= 20 {
-                mascot::Act::Fresh
-            } else {
-                return None;
-            };
-            Some((provider, act))
-        })
-}
-
-fn draw_compact_usage(
-    gfx: &Gfx,
-    content: &VisualCollection,
-    geometry: IslandGeometry,
-    bar_height: f32,
-    providers: &[IslandProvider<'_>],
-) -> Result<Vec<(Provider, f32)>> {
-    let c = &gfx.compositor;
-    let px = |v| geometry.px(v);
-    let ink = geometry.ink();
-    let scale = geometry.scale;
-    let inset = px(13.0);
-    let half = (geometry.width - 2.0 * inset) / providers.len().max(1) as f32;
-    if half < px(20.0) {
-        let icon = gfx.glyph_brush(&[('\u{E9D9}', 1.0)], scale, ink)?;
-        add_visual(
-            c,
-            content,
-            &icon.brush.cast()?,
-            (geometry.width - icon.width) / 2.0,
-            (bar_height - icon.height) / 2.0,
-            icon.width,
-            icon.height,
-        )?;
-        let centre = geometry.width / 2.0;
-        return Ok(providers
-            .iter()
-            .map(|(provider, ..)| (*provider, centre))
-            .collect());
-    }
-    let mut anchors = Vec::with_capacity(providers.len());
-    for (index, (provider, usage, accent)) in providers.iter().enumerate() {
-        anchors.push((*provider, inset + (index as f32 + 0.5) * half));
-        // When space is tight the full list is still available in the panel.
-        if half < px(20.0) {
-            break;
-        }
-        let icon_size = px(18.0) as u32;
-        let start = inset
-            + index as f32 * half
-            + if half < px(84.0) {
-                (half - icon_size as f32) / 2.0
-            } else {
-                px(21.0)
-            };
-        if let Some(image) = usage::logo(*provider) {
-            let image_brush = gfx.icon_brush(image, icon_size)?;
-            let brush: CompositionBrush =
-                if !matches!(provider, Provider::Claude | Provider::Gemini) && geometry.light {
-                    let tinted = c.CreateMaskBrush()?;
-                    tinted.SetMask(&image_brush)?;
-                    tinted.SetSource(&c.CreateColorBrushWithColor(rgba(27, 34, 45, 255))?)?;
-                    tinted.cast()?
-                } else {
-                    image_brush.cast()?
-                };
-            add_visual(
-                c,
-                content,
-                &brush,
-                start,
-                (bar_height - icon_size as f32) / 2.0,
-                icon_size as f32,
-                icon_size as f32,
-            )?;
-        }
-        let percent = usage.compact_text();
-        if half > px(106.0) {
-            let font = if usage.main_window().is_some() {
-                14.0
-            } else {
-                12.0
-            };
-            let label = gfx.text_brush_sized(&percent, scale, font, true, ink)?;
-            let reserve = if usage.main_window().is_some() {
-                74.0
-            } else {
-                50.0
-            };
-            if label.width <= half - px(reserve) {
-                add_visual(
-                    c,
-                    content,
-                    &label.brush.cast()?,
-                    start + px(25.0),
-                    (bar_height - label.height) / 2.0,
-                    label.width,
-                    label.height,
-                )?;
-            }
-        }
-        if half >= px(84.0) {
-            let ring = gfx.usage_ring(
-                usage.main_window().map(|window| window.used_percent),
-                scale,
-                *accent,
-            )?;
-            add_visual(
-                c,
-                content,
-                &ring.brush.cast()?,
-                inset + (index + 1) as f32 * half - px(16.0) - ring.width,
-                (bar_height - ring.height) / 2.0,
-                ring.width,
-                ring.height,
-            )?;
-        }
-    }
-    Ok(anchors)
-}
-
-fn draw_bubble_usage(
-    gfx: &Gfx,
-    content: &VisualCollection,
-    geometry: IslandGeometry,
-    pill_height: f32,
-    providers: &[IslandProvider<'_>],
-) -> Result<Vec<(Provider, f32)>> {
-    let c = &gfx.compositor;
-    let px = |v| geometry.px(v);
-    let ink = geometry.ink();
-    let scale = geometry.scale;
-    let inset = px(8.0);
-    let slot = (geometry.width - 2.0 * inset) / providers.len().max(1) as f32;
-    if slot < px(20.0) {
-        let icon = gfx.glyph_brush(&[('\u{E9D9}', 1.0)], scale, ink)?;
-        add_visual(
-            c,
-            content,
-            &icon.brush.cast()?,
-            (geometry.width - icon.width) / 2.0,
-            (pill_height - icon.height) / 2.0,
-            icon.width,
-            icon.height,
-        )?;
-        let centre = geometry.width / 2.0;
-        return Ok(providers
-            .iter()
-            .map(|(provider, ..)| (*provider, centre))
-            .collect());
-    }
-    let icon_size = px(15.0) as u32;
-    let gap = px(4.0);
-    let mut anchors = Vec::with_capacity(providers.len());
-    for (index, (provider, usage, _accent)) in providers.iter().enumerate() {
-        let slot_left = inset + index as f32 * slot;
-        anchors.push((*provider, slot_left + slot / 2.0));
-        let percent = usage.compact_text();
-        let label = if slot >= px(44.0) {
-            let label = gfx.text_brush_sized(&percent, scale, 11.5, true, ink)?;
-            (label.width + icon_size as f32 + gap <= slot).then_some(label)
-        } else {
-            None
-        };
-        let group_width = icon_size as f32 + label.as_ref().map_or(0.0, |text| gap + text.width);
-        let start = slot_left + ((slot - group_width) / 2.0).max(0.0);
-        if let Some(image) = usage::logo(*provider) {
-            let image_brush = gfx.icon_brush(image, icon_size)?;
-            let brush: CompositionBrush =
-                if !matches!(provider, Provider::Claude | Provider::Gemini) && geometry.light {
-                    let tinted = c.CreateMaskBrush()?;
-                    tinted.SetMask(&image_brush)?;
-                    tinted.SetSource(&c.CreateColorBrushWithColor(rgba(27, 34, 45, 255))?)?;
-                    tinted.cast()?
-                } else {
-                    image_brush.cast()?
-                };
-            add_visual(
-                c,
-                content,
-                &brush,
-                start,
-                (pill_height - icon_size as f32) / 2.0,
-                icon_size as f32,
-                icon_size as f32,
-            )?;
-        }
-        if let Some(label) = label {
-            add_visual(
-                c,
-                content,
-                &label.brush.cast()?,
-                start + icon_size as f32 + gap,
-                (pill_height - label.height) / 2.0,
-                label.width,
-                label.height,
-            )?;
-        }
-    }
-    Ok(anchors)
 }
 
 fn track_title(track: &Track) -> &str {
@@ -4415,7 +3418,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, false, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, false, true, MenuBarWidgets::default())?;
         bar.set_visible(false)?;
         let mut look = bar.look.clone().context("initial look")?;
         look.screen = RECT {
@@ -4496,7 +3499,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, false, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, false, true, MenuBarWidgets::default())?;
         bar.set_visible(false)?;
         let mut look = bar.look.clone().context("initial look")?;
         look.screen = RECT {
@@ -4549,7 +3552,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, false, false, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, false, false, MenuBarWidgets::default())?;
         bar.set_visible(false)?;
         bar.cue = None;
         bar.online = None;
@@ -4600,7 +3603,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, false, false, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, false, false, MenuBarWidgets::default())?;
         bar.set_visible(false)?;
         bar.set_visible(true)?;
         assert!(bar.reserved_strip().is_some());
@@ -4648,7 +3651,7 @@ mod island_tests {
             system_monitor: true,
             ..MenuBarWidgets::default()
         };
-        let mut bar = MenuBar::create(&gfx, false, false, false, widgets)?;
+        let mut bar = MenuBar::create(&gfx, false, false, widgets)?;
         bar.set_visible(false)?;
         // Hidden, nothing is sampled.
         assert!(bar.monitor.is_none());
@@ -4713,7 +3716,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, false, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, false, true, MenuBarWidgets::default())?;
         bar.set_visible(false)?;
         bar.bluetooth = None;
         let mut look = bar.look.clone().context("initial look")?;
@@ -4765,7 +3768,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, false, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, false, true, MenuBarWidgets::default())?;
         bar.set_visible(false)?;
         bar.audio = None;
         let mut look = bar.look.clone().context("initial look")?;
@@ -4775,98 +3778,6 @@ mod island_tests {
             right: 0,
             bottom: 0,
         };
-        look.track = None;
-        look.panel = Some(Island::Usage);
-        look.usage_enabled = true;
-        look.active_providers.0.fill(true);
-        for provider in Provider::ALL {
-            look.usage.providers[provider as usize] = ProviderUsage {
-                state: State::Ready,
-                windows: [300, 10_080]
-                    .into_iter()
-                    .map(|minutes| usage::Window {
-                        label: None,
-                        minutes,
-                        used_percent: 30,
-                        resets_at: None,
-                    })
-                    .collect(),
-                fetched_at: Some(std::time::SystemTime::now()),
-            };
-        }
-        let opencode = &mut look.usage.providers[Provider::OpenCode as usize];
-        opencode.windows.push(usage::Window {
-            label: None,
-            minutes: 43_200,
-            used_percent: 10,
-            resets_at: None,
-        });
-        for style in [IslandStyle::Notch, IslandStyle::Bubble] {
-            look.widgets.island_style = style;
-            for scale in [1.0, 1.5, 2.0] {
-                look.scale = scale;
-                for light in [false, true] {
-                    look.light = light;
-                    bar.usage_scroll = 0.0;
-                    bar.build(&gfx, &look)?;
-                    assert!(bar.visual_height <= 769, "popup must fit a 768 px display");
-                    if scale == 1.0 {
-                        assert!(bar.usage_viewport.is_none());
-                        continue;
-                    }
-                    let viewport = bar
-                        .usage_viewport
-                        .as_ref()
-                        .context("overflow needs a viewport")?;
-                    let bounds = viewport.bounds;
-                    let maximum = viewport.maximum;
-                    assert!(maximum > 0.0);
-                    let body = viewport.content.clone();
-                    let down = viewport.down.clone();
-                    let root = bar.surface.Children()?.First()?.Current()?;
-                    for _ in 0..20 {
-                        assert!(bar.scroll_usage(48.0)?);
-                    }
-                    assert_eq!(bar.surface.Children()?.First()?.Current()?, root);
-                    assert_eq!(bar.usage_scroll, maximum);
-                    assert_eq!(body.Offset()?.Y, -(maximum * scale).round());
-                    assert_eq!(down.Opacity()?, 0.22);
-                    let up = bar
-                        .island_hits
-                        .iter()
-                        .find(|hit| matches!(hit.action, IslandAction::ScrollUsage(-1)))
-                        .context("scroll up button")?;
-                    let (left, top, right, bottom) = up.bounds;
-                    assert!(
-                        left >= bounds.0
-                            && top >= bounds.1
-                            && right <= bounds.2
-                            && bottom <= bounds.3
-                    );
-                    bar.click(&gfx, (left + right) / 2.0, (top + bottom) / 2.0)?;
-                    assert!(bar.usage_scroll < maximum);
-                    assert_eq!(bar.surface.Children()?.First()?.Current()?, root);
-                    assert!(bar.scroll_usage(-10_000.0)?);
-                    assert_eq!(bar.usage_scroll, 0.0);
-                }
-            }
-        }
-        // A busy refresh is not another active input target.
-        look.usage_refreshing = true;
-        bar.build(&gfx, &look)?;
-        assert!(
-            !bar.island_hits
-                .iter()
-                .any(|hit| matches!(hit.action, IslandAction::Refresh))
-        );
-        look.usage_refreshing = false;
-        bar.scroll_usage(10_000.0)?;
-        look.active_providers.0.fill(false);
-        look.active_providers.0[Provider::Codex as usize] = true;
-        bar.build(&gfx, &look)?;
-        assert_eq!(bar.usage_scroll, 0.0); // A refresh that removes rows clamps the offset.
-        assert!(bar.usage_viewport.is_none());
-
         look.panel = Some(Island::Music);
         look.track = Some(Track::test_fixture());
         bar.panel = look.panel;
@@ -4922,8 +3833,8 @@ mod island_tests {
         bar.volume_drag = Some(span);
         bar.queue_volume(span, span.bottom);
         // Move the capsule by changing its anchor style, without changing the
-        // monitor/DPI. A provider count can now leave the capsule in place.
-        look.widgets.island_style = IslandStyle::Notch;
+        // monitor/DPI.
+        look.widgets.island_style = IslandStyle::Bubble;
         bar.apply_look(&gfx, look.clone())?;
         assert!(bar.volume_drag.is_none() && bar.pending_volume.is_none());
 
@@ -4934,7 +3845,7 @@ mod island_tests {
         let mut wide = bar.look.clone().context("crowded look")?;
         wide.screen.right = wide.screen.left + 1920;
         bar.apply_look(&gfx, wide)?;
-        assert!(bar.panel_span.width() <= 0.0 && bar.usage_viewport.is_none());
+        assert!(bar.panel_span.width() <= 0.0);
         Ok(())
     }
 
@@ -5052,7 +3963,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, false, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, false, true, MenuBarWidgets::default())?;
         bar.set_visible(false)?;
         bar.audio = None; // This fixture can never change the user's audio.
         bar.status.volume = Some(Volume {
@@ -5293,101 +4204,6 @@ mod island_tests {
     }
 
     #[test]
-    #[ignore = "Requires Windows composition; hidden window and no provider requests"]
-    fn opencode_only_measured_go_appears_in_both_island_styles() -> Result<()> {
-        use anyhow::Context;
-        use windows::Win32::System::WinRT::{
-            CreateDispatcherQueueController, DQTAT_COM_STA, DQTYPE_THREAD_CURRENT,
-            DispatcherQueueOptions,
-        };
-        // SAFETY: The dispatcher and hidden composition objects belong to this thread.
-        let _queue = unsafe {
-            CreateDispatcherQueueController(DispatcherQueueOptions {
-                dwSize: size_of::<DispatcherQueueOptions>() as u32,
-                threadType: DQTYPE_THREAD_CURRENT,
-                apartmentType: DQTAT_COM_STA,
-            })?
-        };
-        let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, false, true, MenuBarWidgets::default())?;
-        bar.set_visible(false)?;
-        let mut look = bar.look.clone().context("initial look")?;
-        look.track = None;
-        look.active_providers = ActiveProviders::default();
-        look.active_providers.0[Provider::OpenCode as usize] = true;
-        // Yesterday's saved quota is not evidence that Codex is running now.
-        look.usage.providers[Provider::Codex as usize] = ProviderUsage {
-            state: State::Ready,
-            windows: vec![usage::Window {
-                label: None,
-                minutes: 300,
-                used_percent: 42,
-                resets_at: None,
-            }],
-            fetched_at: Some(std::time::SystemTime::now() - Duration::from_secs(24 * 60 * 60)),
-        };
-        let quota: Vec<_> = [300, 10_080, 43_200]
-            .into_iter()
-            .map(|minutes| usage::Window {
-                label: None,
-                minutes,
-                used_percent: 15,
-                resets_at: Some(chrono::Utc::now() + chrono::Duration::hours(2)),
-            })
-            .collect();
-        for style in [IslandStyle::Notch, IslandStyle::Bubble] {
-            look.widgets.island_style = style;
-            for scale in [1.0, 1.25, 1.5, 2.0] {
-                look.scale = scale;
-                for (light, glass) in [(true, true), (false, true), (true, false), (false, false)] {
-                    look.light = light;
-                    look.glass = glass;
-                    look.panel = Some(Island::Usage);
-                    look.usage_enabled = true;
-                    look.usage.providers[Provider::OpenCode as usize] = ProviderUsage::default();
-                    bar.apply_look(&gfx, look.clone())?;
-                    assert!(bar.island_hits.is_empty() && bar.panel.is_none());
-                    assert_eq!(bar.triggers_span.width(), 0.0);
-                    look.usage.providers[Provider::OpenCode as usize] = ProviderUsage {
-                        state: State::Ready,
-                        windows: quota.clone(),
-                        fetched_at: Some(std::time::SystemTime::now()),
-                    };
-                    bar.apply_look(&gfx, look.clone())?;
-                    let current = bar.look.as_ref().context("rendered Go")?;
-                    let providers = island_providers(current);
-                    assert_eq!(providers.len(), 1);
-                    assert!(providers.iter().all(|entry| entry.0 == Provider::OpenCode));
-                    assert_eq!(
-                        current.panel_content_height(),
-                        74.0 + ISLAND_ROW_HEIGHT + 26.0
-                    );
-                    assert!(bar.panel_span.width() > 0.0);
-                    assert!(
-                        bar.island_hits
-                            .iter()
-                            .any(|hit| matches!(hit.action, IslandAction::Toggle(Island::Usage)))
-                    );
-                    assert!(
-                        bar.island_hits
-                            .iter()
-                            .any(|hit| matches!(hit.action, IslandAction::Refresh))
-                    );
-                }
-            }
-        }
-        // Removing Go credentials/quota closes its open popup and removes the trigger.
-        look.usage.providers[Provider::OpenCode as usize] = ProviderUsage {
-            state: State::SignIn,
-            ..ProviderUsage::default()
-        };
-        bar.apply_look(&gfx, look)?;
-        assert!(bar.panel.is_none() && bar.panel_span.width() == 0.0);
-        assert!(bar.island_hits.is_empty() && bar.usage_viewport.is_none());
-        Ok(())
-    }
-
-    #[test]
     #[ignore = "Requires Windows desktop composition; keeps the bar hidden"]
     fn accessory_opt_out_blocks_startup_resume_and_retry() -> Result<()> {
         use windows::Win32::System::WinRT::{
@@ -5402,7 +4218,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, true, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, true, true, MenuBarWidgets::default())?;
         bar.set_visible(false)?;
         assert!(!bar.accessories_enabled && bar.accessories.is_none());
         bar.restart_accessories(&gfx)?;
@@ -5476,7 +4292,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, true, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, true, true, MenuBarWidgets::default())?;
         bar.set_visible(false)?;
         bar.accessories = None;
         let mut look = bar.look.clone().context("missing initial menu bar")?;
@@ -5541,7 +4357,7 @@ mod island_tests {
         };
         let gfx = Gfx::new()?;
         strings::set_language(Language::Es);
-        let mut bar = MenuBar::create(&gfx, false, true, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, true, true, MenuBarWidgets::default())?;
         assert!(
             bar.look
                 .as_ref()
@@ -5572,11 +4388,8 @@ mod island_tests {
             );
             // Exercise Windows shaping/font fallback and compact surface bounds,
             // including mixed Arabic + Latin text and Hindi/Bengali conjuncts.
-            for text in [
-                strings::text().usage_title,
-                strings::text().media_title,
-                strings::text().usage_claude_sign_in,
-            ] {
+            {
+                let text = strings::text().media_title;
                 let label = gfx.text_brush_fitted(text, 1.0, 13.0, false, Ink::Dark, 160.0)?;
                 assert!(label.width > 0.0 && label.width <= 160.0);
                 assert!(label.height > 0.0 && label.height < 100.0);
@@ -5604,7 +4417,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, true, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, true, true, MenuBarWidgets::default())?;
         assert!(
             !unsafe { IsWindowVisible(bar.hwnd) }.as_bool(),
             "auto-hide must apply before the first frame"
@@ -5706,7 +4519,7 @@ mod island_tests {
             })?
         };
         let gfx = Gfx::new()?;
-        let mut bar = MenuBar::create(&gfx, false, true, true, MenuBarWidgets::default())?;
+        let mut bar = MenuBar::create(&gfx, true, true, MenuBarWidgets::default())?;
         bar.set_app_name(&gfx, "Muelle animation test")?;
         bar.set_auto_hide(true)?;
         let inside = POINT {
@@ -5761,87 +4574,30 @@ mod island_tests {
     }
 
     #[test]
-    fn clicking_usage_replaces_music_and_clicking_again_closes_it() {
-        let open = toggle_panel(Some(Island::Music), Island::Usage);
-        assert_eq!(open, Some(Island::Usage));
-        assert_eq!(toggle_panel(open, Island::Usage), None);
-    }
-
-    #[test]
-    fn usage_panel_covers_the_last_provider_even_when_the_trigger_is_wide() {
-        let screen = 1920.0;
-        let triggers = trigger_layout(
-            Span {
-                left: 210.0,
-                right: 1540.0,
-            },
-            screen / 2.0,
-            1.25,
-            true,
-            5,
-        );
-        let Some(usage) = triggers[1].1 else {
-            panic!("Usage trigger should fit");
-        };
-        let panel = panel_span(usage, screen, 550.0);
-        assert!(panel.left <= usage.left && panel.right >= usage.right);
-    }
-
-    #[test]
-    fn narrow_bar_still_gives_each_trigger_its_own_clickable_span() {
-        let bounds = Span {
-            left: 200.0,
-            right: 390.0,
-        };
-        let [(_, Some(music)), (_, Some(usage))] = trigger_layout(bounds, 300.0, 1.5, true, 3)
-        else {
-            panic!("Both triggers should fit");
-        };
-        assert!(
-            music.left >= bounds.left && music.right < usage.left && usage.right <= bounds.right
-        );
-    }
-
-    #[test]
     fn bubble_layout_aligns_to_right_status_edge_and_stays_compact() {
         let bounds = Span {
             left: 210.0,
             right: 1420.0,
         };
-        let [(_, Some(short_music)), (_, Some(short_usage))] =
-            bubble_trigger_layout(bounds, 1.0, Some(92.0), 2)
-        else {
-            panic!("Both bubble segments should fit");
+        let (Some(short), Some(long)) = (
+            bubble_trigger_layout(bounds, 1.0, Some(92.0)),
+            bubble_trigger_layout(bounds, 1.0, Some(240.0)),
+        ) else {
+            panic!("The bubble should fit");
         };
-        let [(_, Some(long_music)), (_, Some(long_usage))] =
-            bubble_trigger_layout(bounds, 1.0, Some(240.0), 2)
-        else {
-            panic!("Both bubble segments should fit");
-        };
-        assert_eq!(short_usage.right, bounds.right);
-        assert_eq!(long_usage.right, bounds.right);
-        assert!(short_music.width() < long_music.width());
-        assert_eq!(long_music.width(), BUBBLE_MUSIC_WIDTH);
-        assert!(short_music.left >= bounds.left && short_music.right < short_usage.left);
-
-        let short_bubble = Span {
-            left: short_music.left,
-            right: short_usage.right,
-        };
-        let long_bubble = Span {
-            left: long_music.left,
-            right: long_usage.right,
-        };
-        let short_panel = bubble_panel_span(short_bubble, 1920.0, 360.0);
-        let long_panel = bubble_panel_span(long_bubble, 1920.0, 360.0);
+        assert_eq!(short.right, bounds.right);
+        assert_eq!(long.right, bounds.right);
+        assert!(short.width() < long.width());
+        assert_eq!(long.width(), BUBBLE_MUSIC_WIDTH);
+        let short_panel = bubble_panel_span(short, 1920.0, 360.0);
+        let long_panel = bubble_panel_span(long, 1920.0, 360.0);
         assert_eq!(short_panel.left, long_panel.left);
         assert_eq!(short_panel.right, long_panel.right);
     }
 
     #[test]
-    fn losing_a_session_closes_its_panel_without_opening_the_other() {
-        assert_eq!(available_panel(Some(Island::Music), false, true), None);
-        assert_eq!(available_panel(Some(Island::Usage), true, false), None);
+    fn losing_the_track_closes_its_panel() {
+        assert_eq!(available_panel(Some(Island::Music), false), None);
     }
 
     #[test]
@@ -5881,74 +4637,5 @@ mod island_tests {
             )?;
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod mascot_tests {
-    use super::*;
-    use crate::usage::{ProviderUsage, Snapshot, State, Window};
-
-    fn at(percent: Option<u8>) -> Snapshot {
-        let mut snapshot = Snapshot::default();
-        if let Some(percent) = percent {
-            snapshot.providers[Provider::Claude as usize] = ProviderUsage {
-                state: State::Ready,
-                windows: vec![Window {
-                    label: None,
-                    minutes: 300,
-                    used_percent: percent,
-                    resets_at: None,
-                }],
-                fetched_at: None,
-            };
-        }
-        snapshot
-    }
-
-    fn moment(before: Option<u8>, now: Option<u8>) -> Option<mascot::Act> {
-        let mut active = ActiveProviders::default();
-        active.0[Provider::Claude as usize] = true;
-        usage_moment(&at(before), &at(now), &active).map(|(_, act)| act)
-    }
-
-    #[test]
-    fn usage_moment_should_fire_only_when_a_line_is_crossed() {
-        assert_eq!(moment(Some(60), Some(0)), Some(mascot::Act::Fresh));
-        assert_eq!(moment(Some(85), Some(91)), Some(mascot::Act::Nervous));
-        assert_eq!(moment(Some(95), Some(100)), Some(mascot::Act::Exhausted));
-        // Straight to 100 is "exhausted", not "nervous".
-        assert_eq!(moment(Some(50), Some(100)), Some(mascot::Act::Exhausted));
-        // Staying above a line, a small reset, or the first figure: nothing.
-        assert_eq!(moment(Some(92), Some(95)), None);
-        assert_eq!(moment(Some(10), Some(0)), None);
-        assert_eq!(moment(None, Some(0)), None);
-        assert_eq!(moment(None, Some(100)), None);
-    }
-
-    #[test]
-    fn usage_moment_ignores_failed_reads_and_different_quota_windows() {
-        let before = at(Some(95));
-        let mut after = at(Some(0));
-        let mut active = ActiveProviders::default();
-        active.0[Provider::Claude as usize] = true;
-        after.providers[Provider::Claude as usize].windows[0].minutes = 10080;
-        assert!(usage_moment(&before, &after, &active).is_none());
-        after.providers[Provider::Claude as usize].windows[0].minutes = 300;
-        after.providers[Provider::Claude as usize].state = State::Unavailable;
-        assert!(usage_moment(&before, &after, &active).is_none());
-    }
-
-    #[test]
-    fn usage_moment_ignores_out_of_order_measurements() {
-        let mut before = at(Some(95));
-        let mut after = at(Some(0));
-        let mut active = ActiveProviders::default();
-        active.0[Provider::Claude as usize] = true;
-        let now = std::time::SystemTime::now();
-        before.providers[Provider::Claude as usize].fetched_at = Some(now);
-        after.providers[Provider::Claude as usize].fetched_at =
-            now.checked_sub(std::time::Duration::from_secs(60));
-        assert!(usage_moment(&before, &after, &active).is_none());
     }
 }
