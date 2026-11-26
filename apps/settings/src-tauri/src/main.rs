@@ -37,11 +37,16 @@ fn default_config() -> Config {
 }
 
 #[tauri::command]
-async fn set_config(patch: serde_json::Map<String, serde_json::Value>) -> Result<Config, String> {
+async fn set_config(
+    patch: serde_json::Map<String, serde_json::Value>,
+    preview_mascot: Option<bool>,
+) -> Result<Config, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let preview_mascot =
+            preview_mascot.unwrap_or(false) && patch.contains_key("mascotCharacter");
         let config = muelle_config::update_preferences(&muelle_config::default_path(), patch)
             .map_err(|error| error.to_string())?;
-        dock_link::notify_config_changed();
+        dock_link::notify_config_changed_with_preview(preview_mascot);
         Ok(config)
     })
     .await

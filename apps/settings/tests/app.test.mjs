@@ -47,7 +47,7 @@ function fixture(section = "menubar", config = {}, save = async () => {}, galler
   let stateIndex = 0, refIndex = 0, nextTimer = 0, close;
   const loaded = { ...base, ...config };
   const gallery = section === "gallery";
-  const wallpaperCalls = [], wallpaperPreviews = [], clockPicks = [];
+  const wallpaperCalls = [], wallpaperPreviews = [], clockPicks = [], mascotPreviews = [];
   const browser = {
     addEventListener(event, callback) { assert.ok(!listeners.has(event)); listeners.set(event, callback); },
     removeEventListener(event) { listeners.delete(event); },
@@ -85,7 +85,7 @@ function fixture(section = "menubar", config = {}, save = async () => {}, galler
         case "apply_wallpaper": wallpaperCalls.push({ ...args }); return galleryNative.apply?.(args.id);
         case "pick_clock_target": clockPicks.push({ ...args }); return galleryNative.clockTarget ?? null;
         case "default_config": return { ...base, autoHide: false, smartHide: true };
-        case "set_config": calls.push({ ...args.patch }); return save(args.patch);
+        case "set_config": calls.push({ ...args.patch }); mascotPreviews.push(args.previewMascot ?? false); return save(args.patch);
         default: throw new Error(`Unexpected native call: ${command}`);
       }
     } },
@@ -114,7 +114,7 @@ function fixture(section = "menubar", config = {}, save = async () => {}, galler
   }
   function find(predicate) { const node = [...elements(render())].find(predicate); assert.ok(node); return node; }
   return {
-    calls, timers, render, themes: nativeWindow.themes, wallpaperCalls, wallpaperPreviews, clockPicks,
+    calls, timers, render, themes: nativeWindow.themes, wallpaperCalls, wallpaperPreviews, clockPicks, mascotPreviews,
     external(patch) { Object.assign(loaded, patch); },
     async focus() { listeners.get("focus")?.(); await settle(); },
     async mount() { render(); const cleanup = effects.map((effect) => effect()); await settle(); return () => cleanup.forEach((fn) => fn?.()); },
@@ -375,6 +375,44 @@ test("the mascot is Claude's crab unless the cat is chosen, and only while it is
     view.fire(60);
     await settle();
     assert.deepEqual(view.calls, [{ mascotCharacter: "cat", mascotBreakReminder: true }]);
+  } finally { unmount(); }
+});
+
+test("mascot selections and reselects request one preview of the latest choice only", async () => {
+  const view = fixture("dock", { mascot: true, mascotCharacter: "crab" });
+  const unmount = await view.mount();
+  try {
+    assert.deepEqual(view.mascotPreviews, [], "opening Settings must not play a preview");
+    view.change(texts.en.mascotCharacter, "cat");
+    view.change(texts.en.mascotCharacter, "fox");
+    view.fire(60); await settle();
+    assert.deepEqual(view.calls, [{ mascotCharacter: "fox" }]);
+    assert.deepEqual(view.mascotPreviews, [true]);
+    const picker = [...elements(view.body())].find((node) =>
+      node.props.label === texts.en.mascotCharacter && "onReselect" in node.props);
+    picker.props.onReselect("fox");
+    view.fire(60); await settle();
+    assert.deepEqual(view.mascotPreviews, [true, true]);
+    view.change(texts.en.mascotBreak, true);
+    view.fire(60); await settle();
+    assert.deepEqual(view.mascotPreviews, [true, true, false]);
+  } finally { unmount(); }
+});
+
+test("a failed mascot save retries its preview with the newer selected character", async () => {
+  let fail = true;
+  const view = fixture("dock", { mascot: true, mascotCharacter: "crab" }, async () => {
+    if (fail) throw new Error("fixture write failure");
+  });
+  const unmount = await view.mount();
+  try {
+    view.change(texts.en.mascotCharacter, "cat");
+    view.fire(60); await settle();
+    fail = false;
+    view.change(texts.en.mascotCharacter, "girl");
+    view.fire(60); await settle();
+    assert.deepEqual(view.calls, [{ mascotCharacter: "cat" }, { mascotCharacter: "girl" }]);
+    assert.deepEqual(view.mascotPreviews, [true, true]);
   } finally { unmount(); }
 });
 

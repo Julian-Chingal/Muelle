@@ -651,7 +651,13 @@ pub(super) unsafe extern "system" fn wndproc(
                 Ok(())
             });
         }
-        _ if CONFIG_CHANGED.get() == Some(&msg) => with_app("ajustes", App::reload_config),
+        _ if CONFIG_CHANGED.get() == Some(&msg) => with_app("ajustes", |app| {
+            app.reload_config()?;
+            if w.0 == muelle_shell::dock_link::PREVIEW_MASCOT {
+                app.preview_mascot();
+            }
+            Ok(())
+        }),
         crate::overlays::OVERLAYS_CHANGED => {
             with_app("insignias de apps", |app| {
                 app.sync_badge_visuals()?;

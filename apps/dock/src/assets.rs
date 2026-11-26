@@ -3,6 +3,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    rc::Rc,
     sync::{
         Arc, Mutex,
         atomic::{AtomicIsize, Ordering},
@@ -43,6 +44,7 @@ pub struct Visuals {
     results: Receiver<Loaded>,
     ready: HashMap<Request, Option<AppVisual>>,
     pending: HashSet<Request>,
+    avatars: HashMap<String, Rc<muelle_shell::icons::IconImage>>,
     generations: HashMap<String, u64>,
     generation: u64,
     window: Arc<AtomicIsize>,
@@ -119,6 +121,7 @@ impl Visuals {
             results,
             ready: HashMap::new(),
             pending: HashSet::new(),
+            avatars: HashMap::new(),
             generations: HashMap::new(),
             generation: 0,
             window,
@@ -138,24 +141,33 @@ impl Visuals {
         {
             self.pending.insert(request.clone());
         }
-        self.ready.get(&request).and_then(Option::as_ref)
+        self.cached(&request)
     }
 
     /// Like `get`, but only reads what is loaded already: several loaded
     /// visuals can then be borrowed at once (a group's tile).
     pub fn peek(&self, id: &str, variant: &'static str) -> Option<&AppVisual> {
+        self.cached(&Request {
+            id: id.to_owned(),
+            variant,
+            generation: self.generations.get(id).copied().unwrap_or(0),
+        })
+    }
+
+    fn cached(&self, request: &Request) -> Option<&AppVisual> {
         self.ready
-            .get(&Request {
-                id: id.to_owned(),
-                variant,
-                generation: self.generations.get(id).copied().unwrap_or(0),
+            .get(request)
+            .or_else(|| {
+                self.ready.iter().find_map(|(old, visual)| {
+                    (old.id == request.id && old.variant == request.variant).then_some(visual)
+                })
             })
             .and_then(Option::as_ref)
     }
 
     pub fn collect(&mut self) -> Vec<String> {
         let mut changed = Vec::new();
-        for loaded in self.results.try_iter() {
+        for mut loaded in self.results.try_iter() {
             self.pending.remove(&loaded.request);
             if loaded.request.generation
                 != self
@@ -166,7 +178,31 @@ impl Visuals {
             {
                 continue;
             }
-            changed.push(loaded.request.id.clone());
+            let avatar = loaded
+                .visual
+                .as_mut()
+                .and_then(|visual| visual.avatar.take());
+            let avatar_changed =
+                self.avatars.get(&loaded.request.id).map(Rc::as_ref) != avatar.as_ref();
+            if avatar_changed && let Some(avatar) = avatar {
+                self.avatars
+                    .insert(loaded.request.id.clone(), Rc::new(avatar));
+            } else if avatar_changed {
+                self.avatars.remove(&loaded.request.id);
+            }
+            let same = self
+                .ready
+                .iter()
+                .find(|(old, _)| {
+                    old.id == loaded.request.id && old.variant == loaded.request.variant
+                })
+                .is_some_and(|(_, visual)| visual == &loaded.visual);
+            if !same || avatar_changed {
+                changed.push(loaded.request.id.clone());
+            }
+            self.ready.retain(|old, _| {
+                old.id != loaded.request.id || old.variant != loaded.request.variant
+            });
             self.ready.insert(loaded.request, loaded.visual);
         }
         changed
@@ -174,6 +210,7 @@ impl Visuals {
 
     pub fn retain(&mut self, mut needed: impl FnMut(&str) -> bool) {
         self.ready.retain(|request, _| needed(&request.id));
+        self.avatars.retain(|id, _| needed(id));
         self.generations
             .retain(|id, _| needed(id) || self.pending.iter().any(|request| request.id == *id));
     }
@@ -183,7 +220,12 @@ impl Visuals {
     pub fn invalidate(&mut self, id: &str) {
         self.generation = self.generation.wrapping_add(1);
         self.generations.insert(id.to_owned(), self.generation);
-        self.ready.retain(|request, _| request.id != id);
+        // Retain the previous pixels until replacement. An unchanged native
+        // profile check must not rebuild the Dock or upload the same avatar.
+    }
+
+    pub fn avatar(&self, id: &str) -> Option<Rc<muelle_shell::icons::IconImage>> {
+        self.avatars.get(id).cloned()
     }
 }
 
@@ -211,6 +253,51 @@ mod tests {
         sync::{Condvar, mpsc::channel},
         time::{Duration, Instant},
     };
+
+    #[test]
+    fn an_unchanged_profile_refresh_reuses_its_avatar_and_needs_no_recomposition() -> Result<()> {
+        let mut visuals = Visuals::start(HWND::default(), 0, |_, _| {
+            let image = muelle_shell::icons::IconImage {
+                width: 1,
+                height: 1,
+                bgra: vec![0, 0, 0, 255],
+            };
+            Some(AppVisual {
+                name: "Work".into(),
+                icon: image.clone(),
+                unbadged: Some(image.clone()),
+                avatar: Some(image),
+            })
+        })?;
+        visuals.get("profile", "");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !visuals.pending.is_empty() && Instant::now() < deadline {
+            visuals.collect();
+            thread::sleep(Duration::from_millis(1));
+        }
+        let avatar = visuals
+            .avatar("profile")
+            .ok_or_else(|| anyhow::anyhow!("initial avatar missing"))?;
+        visuals.invalidate("profile");
+        assert!(
+            visuals.get("profile", "").is_some(),
+            "keep the previous icon during refresh"
+        );
+        let mut changed = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !visuals.pending.is_empty() && Instant::now() < deadline {
+            changed.extend(visuals.collect());
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(visuals.pending.is_empty());
+        assert!(changed.is_empty());
+        assert!(
+            visuals
+                .avatar("profile")
+                .is_some_and(|new| Rc::ptr_eq(&avatar, &new))
+        );
+        Ok(())
+    }
 
     #[test]
     fn a_stale_avatar_load_cannot_replace_a_new_generation() -> Result<()> {
@@ -242,6 +329,12 @@ mod tests {
                     height: 1,
                     bgra: vec![0, 0, 0, 255],
                 },
+                unbadged: None,
+                avatar: Some(muelle_shell::icons::IconImage {
+                    width: 1,
+                    height: 1,
+                    bgra: vec![version as u8, 0, 0, 255],
+                }),
             })
         })?;
         visuals.get("profile", "");
@@ -268,6 +361,10 @@ mod tests {
                 .peek("profile", "")
                 .map(|visual| visual.name.as_str()),
             Some("1")
+        );
+        assert_eq!(
+            visuals.avatar("profile").map(|image| image.bgra.clone()),
+            Some(vec![1, 0, 0, 255])
         );
         Ok(())
     }
@@ -325,6 +422,8 @@ mod tests {
                     height: 1,
                     bgra: vec![0, 0, 0, 255],
                 },
+                unbadged: None,
+                avatar: None,
             })
         })?;
         visuals.get("bin", "empty");

@@ -533,10 +533,17 @@ impl App {
                 refined |= self.roster.refine_pin(&profile.executable, &window.app_id);
             }
         }
-        let changed = refined
+        let mut changed = refined
             | self
                 .roster
                 .sync(self.windows.iter().map(|window| window.app_id.as_str()));
+        // A window first seen before its profile properties were ready must
+        // not leave a second, generic browser icon in the recent-app section.
+        for window in &self.windows {
+            if let Some(profile) = muelle_shell::browser_profiles::Profile::parse(&window.app_id) {
+                changed |= self.roster.forget_recent(&profile.executable);
+            }
+        }
         if !self.config.pin_explorer {
             self.roster.forget_recent(&explorer_id());
         }

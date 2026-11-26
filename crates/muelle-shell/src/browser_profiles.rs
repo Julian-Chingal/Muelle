@@ -5,6 +5,8 @@
 //! reopen after a restart even before its icon cache has been loaded. Cosmetic
 //! metadata is cached separately and never determines which profile to open.
 
+pub(crate) mod avatar;
+
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -82,6 +84,8 @@ pub fn browser_name(executable: &str) -> Option<&'static str> {
         "chrome.exe" => Some("Google Chrome"),
         "msedge.exe" => Some("Microsoft Edge"),
         "brave.exe" => Some("Brave"),
+        "vivaldi.exe" => Some("Vivaldi"),
+        "chromium.exe" => Some("Chromium"),
         _ => None,
     }
 }

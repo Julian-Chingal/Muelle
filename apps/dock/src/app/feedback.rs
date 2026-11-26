@@ -163,6 +163,16 @@ pub(super) fn query_bin_in_background() {
 }
 
 impl App {
+    /// Explicit Settings selection: replace a running act, never queue demos
+    /// or consume the daily greeting/update memory. Existing guards and cleanup
+    /// also apply when Windows animations are off or the Dock is hidden.
+    pub(super) fn preview_mascot(&mut self) {
+        self.stop_mascot();
+        if let Some(place) = self.dock_edge() {
+            self.perform(mascot::Act::Greeting, place);
+        }
+    }
+
     /// The mascot plays `act` (see `mascot`), unless it is out already, it is
     /// turned off, or something runs full screen.
     pub(super) fn perform(&mut self, act: mascot::Act, place: mascot::Place) {
@@ -557,10 +567,24 @@ impl App {
         let shown = self.attention_enabled;
         crate::overlays::retain(|hwnd| self.windows.iter().any(|window| window.hwnd == hwnd));
         // An app's own overlay says more than the attention dot: it replaces it.
-        let overlays: Vec<_> = self
+        let native_overlays: Vec<_> = self
             .entries
             .iter()
             .map(|entry| shown.then(|| entry_overlay(&self.windows, entry)).flatten())
+            .collect();
+        // Profile identity is independent of Windows' notification-badge
+        // preference. Groups retain their original, already badged tile icons.
+        let overlays: Vec<_> = self
+            .entries
+            .iter()
+            .zip(&native_overlays)
+            .map(|(entry, native)| {
+                native.clone().or_else(|| {
+                    (entry.role == Role::App)
+                        .then(|| entry.id.as_deref().and_then(|id| self.icons.avatar(id)))
+                        .flatten()
+                })
+            })
             .collect();
         if let Some(stage) = &mut self.stage {
             stage
@@ -568,11 +592,14 @@ impl App {
                 .set_overlays(&self.gfx, overlays.iter().cloned())?;
             stage.scene.set_attention(
                 &self.gfx,
-                self.entries.iter().zip(&overlays).map(|(entry, overlay)| {
-                    shown
-                        && overlay.is_none()
-                        && entry_has_attention(&self.attention, &self.windows, entry)
-                }),
+                self.entries
+                    .iter()
+                    .zip(&native_overlays)
+                    .map(|(entry, overlay)| {
+                        shown
+                            && overlay.is_none()
+                            && entry_has_attention(&self.attention, &self.windows, entry)
+                    }),
             )?;
         }
         if let Some(view) = &mut self.group_view {

@@ -130,9 +130,10 @@ impl App {
             // A missing icon should not prevent the rest of the dock from rendering.
             let icon = visual
                 .and_then(|visual| {
-                    let side = wanted.min(visual.icon.width);
+                    let image = visual.unbadged.as_ref().unwrap_or(&visual.icon);
+                    let side = wanted.min(image.width);
                     self.gfx
-                        .icon_brush(&visual.icon, side)
+                        .icon_brush(image, side)
                         .inspect_err(|error| eprintln!("muelle: icono de `{id}`: {error:#}"))
                         .ok()
                 })

@@ -101,8 +101,13 @@ fn reject_other_programs_web_apps_guest_and_unsafe_launch_destinations() {
 }
 
 #[test]
-fn edge_and_brave_use_the_same_public_contract_when_available() {
-    for executable in [r"C:\Browser\msedge.exe", r"C:\Browser\brave.exe"] {
+fn chromium_browsers_use_the_same_public_contract_when_available() {
+    for executable in [
+        r"C:\Browser\msedge.exe",
+        r"C:\Browser\brave.exe",
+        r"C:\Browser\vivaldi.exe",
+        r"C:\Browser\chromium.exe",
+    ] {
         let command = format!("{} --profile-directory=Default", quote(executable));
         let Some(profile) = Profile::from_command(executable, "Browser.Default", &command) else {
             panic!("valid browser profile rejected")
@@ -157,7 +162,15 @@ fn live_browser_profiles_publish_usable_metadata() -> Result<(), Box<dyn std::er
     let cache = metadata()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    for family in ["Google Chrome", "Microsoft Edge", "Brave"] {
+    let visuals = cache.visuals.clone();
+    drop(cache);
+    for family in [
+        "Google Chrome",
+        "Microsoft Edge",
+        "Brave",
+        "Vivaldi",
+        "Chromium",
+    ] {
         let profiles: std::collections::HashSet<_> = windows
             .iter()
             .filter(|window| {
@@ -168,8 +181,7 @@ fn live_browser_profiles_publish_usable_metadata() -> Result<(), Box<dyn std::er
         let with_icon = profiles
             .iter()
             .filter(|id| {
-                cache
-                    .visuals
+                visuals
                     .get(**id)
                     .and_then(|visual| icon_location(&visual.icon))
                     .is_some_and(|(path, _)| Path::new(path).is_file())
@@ -179,8 +191,82 @@ fn live_browser_profiles_publish_usable_metadata() -> Result<(), Box<dyn std::er
             "{family}: {} distinct published profiles, {with_icon} existing profile icons",
             profiles.len()
         );
+        let separable = profiles
+            .iter()
+            .filter(|id| {
+                let Some(profile) = Profile::parse(id) else {
+                    return false;
+                };
+                let Some((file, index)) = visuals
+                    .get(**id)
+                    .and_then(|visual| icon_location(&visual.icon))
+                else {
+                    return false;
+                };
+                let Ok(published) = crate::icons::load_icon_at(file, index, 256) else {
+                    return false;
+                };
+                let Ok(base) = crate::icons::load_icon_at(&profile.executable, 0, published.width)
+                else {
+                    return false;
+                };
+                super::avatar::extract(&published, &base).is_some()
+            })
+            .count();
+        eprintln!("{family}: {separable} profile avatars can be separated safely");
     }
-    drop(cache);
+    unsafe {
+        CoUninitialize();
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "Read-only diagnostic of previously published browser icon locations in Muelle's cache"]
+fn cached_browser_profile_avatars_can_be_separated() -> Result<(), Box<dyn std::error::Error>> {
+    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
+    unsafe {
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok()?;
+    }
+    let folder = PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("local app data")?)
+        .join("Muelle/icons");
+    for entry in fs::read_dir(folder)?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("profile-"))
+        .take(128)
+    {
+        let Ok(record) = fs::read(entry.path()) else {
+            continue;
+        };
+        if record.len() > 131_072 {
+            continue;
+        }
+        let Ok(record) = serde_json::from_slice::<Visual>(&record) else {
+            continue;
+        };
+        let Some(profile) = Profile::parse(&record.id) else {
+            continue;
+        };
+        let Some((file, index)) = icon_location(&record.icon) else {
+            continue;
+        };
+        let Ok(published) = crate::icons::load_icon_at(file, index, 256) else {
+            continue;
+        };
+        let Ok(base) = crate::icons::load_icon_at(&profile.executable, 0, published.width) else {
+            continue;
+        };
+        let avatar = super::avatar::extract(&published, &base);
+        eprintln!(
+            "{:?}: published {}x{}, base {}x{}, separable={}",
+            browser_name(&profile.executable),
+            published.width,
+            published.height,
+            base.width,
+            base.height,
+            avatar.is_some()
+        );
+    }
     unsafe {
         CoUninitialize();
     }

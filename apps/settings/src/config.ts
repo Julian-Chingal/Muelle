@@ -67,7 +67,7 @@ export const MAX_MAGNIFIED_SIZE = 160;
 
 export const loadConfig = () => invoke<Config>("get_config");
 export const defaultConfig = () => invoke<Config>("default_config");
-export const saveConfig = (patch: Partial<Config>) => invoke<Config>("set_config", { patch });
+export const saveConfig = (patch: Partial<Config>, previewMascot = false) => invoke<Config>("set_config", { patch, previewMascot });
 export const getAutostart = () => invoke<boolean>("get_autostart");
 /** Current Windows values for display only; never merge these into Config. */
 export interface WindowsPreferences {

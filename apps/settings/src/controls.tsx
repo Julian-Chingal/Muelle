@@ -141,10 +141,12 @@ interface VisualChoicesProps<T extends string> {
   columns?: number;
   options: readonly { value: T; label: string; preview: ReactNode; detail?: string }[];
   onChange: (value: T) => void;
+  /** Optional replay for a choice that is already selected. */
+  onReselect?: (value: T) => void;
 }
 
 /** Native radios provide arrow-key navigation without extra listeners or state. */
-export function VisualChoices<T extends string>({ label, value, hideLabel, columns, options, onChange }: VisualChoicesProps<T>) {
+export function VisualChoices<T extends string>({ label, value, hideLabel, columns, options, onChange, onReselect }: VisualChoicesProps<T>) {
   const name = useId();
   return (
     <fieldset className="visual-setting">
@@ -153,6 +155,7 @@ export function VisualChoices<T extends string>({ label, value, hideLabel, colum
         {options.map((option) => (
           <label className="visual-choice" key={option.value}>
             <input type="radio" name={name} value={option.value} checked={value === option.value}
+              onClick={() => { if (value === option.value) onReselect?.(option.value); }}
               onChange={() => onChange(option.value)} />
             <span className="visual-choice-body">
               <span className="visual-preview" aria-hidden="true">{option.preview}</span>

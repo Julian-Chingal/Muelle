@@ -88,6 +88,7 @@ export function App() {
   /** "Later" hides the banner until Settings is opened again. */
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const pending = useRef<Partial<Config> | null>(null);
+  const pendingMascotPreview = useRef(false);
   const writes = useRef(Promise.resolve(true));
   const timer = useRef<number | undefined>(undefined);
   const resetTimer = useRef<number | undefined>(undefined);
@@ -101,12 +102,16 @@ export function App() {
         const latest = pending.current;
         if (!latest) return true;
         pending.current = null;
+        const previewMascot = pendingMascotPreview.current;
+        pendingMascotPreview.current = false;
         try {
-          await saveConfig(latest);
+          await saveConfig(latest, previewMascot);
           setFailed(false);
           return true;
         } catch {
+          const newerMascotChoice = pending.current && "mascotCharacter" in pending.current;
           pending.current = Object.assign({}, latest, pending.current);
+          if (!newerMascotChoice) pendingMascotPreview.current ||= previewMascot;
           setFailed(true);
           return false;
         }
@@ -190,7 +195,7 @@ export function App() {
 
   // Shows the change at once and saves the latest value shortly after, so a
   // slider drag does not write the file on every pixel.
-  const update = useCallback((patch: Partial<Config>) => {
+  const update = useCallback((patch: Partial<Config>, previewMascot = false) => {
     setConfig((current) => {
       if (!current) return current;
       const next = { ...current, ...patch };
@@ -198,6 +203,7 @@ export function App() {
       return next;
     });
     pending.current = { ...pending.current, ...patch };
+    if ("mascotCharacter" in patch) pendingMascotPreview.current = previewMascot;
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void flushSettings(), SAVE_DELAY_MS);
   }, [flushSettings]);
@@ -504,7 +510,8 @@ export function App() {
                       { value: "mochi", label: t.mascotMochi, preview: <MascotPreview character="mochi" /> },
                       { value: "girl", label: t.mascotGirl, preview: <MascotPreview character="girl" /> },
                     ]}
-                    onChange={(mascotCharacter) => update({ mascotCharacter })}
+                    onChange={(mascotCharacter) => update({ mascotCharacter }, true)}
+                    onReselect={(mascotCharacter) => update({ mascotCharacter }, true)}
                   />
                 </SubRow>
                 <SubRow label={t.mascotBreak} hint={t.mascotBreakHint} open={config.mascot}>

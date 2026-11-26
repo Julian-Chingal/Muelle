@@ -10,9 +10,16 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### English
 
+- Selecting a mascot in Settings plays a five-second walk and greeting on the
+  Dock. Selecting it again replays the demo; rapid choices replace the current
+  preview instead of queuing animations. Windows animation preferences apply.
 - Browser profiles now have separate Dock entries with the name and avatar
   published by Chrome. Pins and profile shortcuts reopen the right profile;
-  compatible Edge/Brave metadata uses the same path. Images load through the
+  compatible Edge, Brave, Vivaldi and Chromium metadata uses the same path.
+  Profile avatars sit above the icon's upper-right corner without shrinking it.
+  Generic browser entries no longer linger in recents after profile detection.
+  Rechecking an unchanged avatar reuses its visual without rebuilding the Dock.
+  Images load through the
   existing cached workers, without Explorer interception or background polling.
 - Uninstall now waits for the Dock and watchdog to stop, restores the original
   Windows taskbar autohide preference and checks the result before deleting its
@@ -22,9 +29,16 @@ copia la sección de la versión que se publica a la release de GitHub.
 
 ### Español
 
+- Elegir una mascota en Ajustes muestra una caminata y saludo de cinco segundos
+  sobre el Dock. Pulsarla de nuevo repite la demostración; las elecciones rápidas
+  sustituyen la anterior sin acumular animaciones. Respeta las animaciones de Windows.
 - Los perfiles del navegador tienen entradas independientes en el Dock con el
   nombre y avatar publicados por Chrome. Los anclajes y accesos directos abren
-  el perfil correcto; se aprovechan los mismos datos en Edge/Brave compatibles.
+  el perfil correcto; se aprovechan los mismos datos en Edge, Brave, Vivaldi y
+  Chromium compatibles. El avatar queda sobre la esquina superior derecha sin
+  reducir el icono. La detección de perfiles no deja un navegador genérico
+  duplicado en recientes. Revisar un avatar sin cambios reutiliza su visual
+  sin reconstruir el Dock.
   Las imágenes usan los trabajadores y la caché existentes, sin intervenir
   Explorer ni añadir sondeos periódicos.
 - La desinstalación espera al cierre del Dock y su guardián, restaura el autohide

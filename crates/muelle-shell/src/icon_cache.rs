@@ -32,6 +32,9 @@ const SECONDS_PER_DAY: u64 = 86_400;
 pub struct AppVisual {
     pub name: String,
     pub icon: IconImage,
+    /// Optional Dock-only layers. Other UI keeps the browser's original icon.
+    pub unbadged: Option<IconImage>,
+    pub avatar: Option<IconImage>,
 }
 
 #[derive(Debug)]
@@ -106,6 +109,8 @@ impl IconCache {
         let visual = AppVisual {
             name: display_name(source),
             icon,
+            unbadged: None,
+            avatar: None,
         };
         // An unwritable cache only makes the next startup slower.
         let _ = fs::create_dir_all(&self.folder);
@@ -140,6 +145,7 @@ impl IconCache {
             .as_ref()
             .and_then(|visual| crate::browser_profiles::icon_location(&visual.icon));
         let mut hash = DefaultHasher::new();
+        "profile-avatar-layers-v1".hash(&mut hash);
         name.hash(&mut hash);
         location
             .map(|(file, index)| {
@@ -157,17 +163,53 @@ impl IconCache {
         let stamp = hash.finish();
         let path = self.entry_path(id, size);
         if let Some(cached) = fs::read(&path).ok().and_then(|bytes| decode(&bytes, stamp)) {
-            return Ok(cached);
+            return Ok(self.profile_layers(cached, &profile.executable));
         }
         // Chromium's relaunch icon already contains the profile avatar. If it
         // has not generated it yet, keep a usable browser icon and profile name.
         let icon = location
             .and_then(|(file, index)| load_icon_at(file, index, size).ok())
             .map_or_else(|| load_icon(&profile.executable, size), Ok)?;
-        let visual = AppVisual { name, icon };
+        let visual = AppVisual {
+            name,
+            icon,
+            unbadged: None,
+            avatar: None,
+        };
         let _ = fs::create_dir_all(&self.folder);
         let _ = fs::write(&path, encode(&visual, stamp));
-        Ok(visual)
+        Ok(self.profile_layers(visual, &profile.executable))
+    }
+
+    fn profile_layers(&self, mut visual: AppVisual, program: &str) -> AppVisual {
+        let size = visual.icon.width;
+        // Cache the executable's unmodified resource, bypassing kept profile
+        // shortcuts, which may themselves contain a badged icon.
+        let stamp = stamp_of(program);
+        let path = self.entry_path(&format!("browser-resource|{program}"), size);
+        let browser = fs::read(&path)
+            .ok()
+            .and_then(|bytes| decode(&bytes, stamp))
+            .map(|cached| cached.icon)
+            .or_else(|| {
+                let icon = load_icon(program, size).ok()?;
+                let base = AppVisual {
+                    name: String::new(),
+                    icon,
+                    unbadged: None,
+                    avatar: None,
+                };
+                let _ = fs::create_dir_all(&self.folder);
+                let _ = fs::write(&path, encode(&base, stamp));
+                Some(base.icon)
+            });
+        if let Some(browser) = browser
+            && let Some(avatar) = crate::browser_profiles::avatar::extract(&visual.icon, &browser)
+        {
+            visual.unbadged = Some(browser);
+            visual.avatar = Some(avatar);
+        }
+        visual
     }
 }
 
@@ -230,6 +272,8 @@ fn decode(bytes: &[u8], expected_stamp: u64) -> Option<AppVisual> {
             height,
             bgra: bgra.to_vec(),
         },
+        unbadged: None,
+        avatar: None,
     })
 }
 
@@ -245,6 +289,8 @@ mod tests {
                 height: 2,
                 bgra: (0..16).collect(),
             },
+            unbadged: None,
+            avatar: None,
         }
     }
 
