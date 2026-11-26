@@ -12,6 +12,10 @@ interface WallpaperTexts {
   wallpaperNames: readonly string[];
 }
 
+/** Off: applying a wallpaper downloads it from GitHub. The backend switch in
+ * `wallpapers.rs` must be turned on too. */
+export const WALLPAPERS_ENABLED: boolean = false;
+
 /** Mounted only in Appearance. No polling, full-size image decoding or remote URLs. */
 export function WallpaperGallery({ texts, onApplied }: { texts: WallpaperTexts; onApplied: (preview: string) => void }) {
   const [selected, setSelected] = useState<number | null>(null);

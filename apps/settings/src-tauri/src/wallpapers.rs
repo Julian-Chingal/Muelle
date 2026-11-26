@@ -28,6 +28,10 @@ use windows::{
     core::{HSTRING, PCWSTR, PWSTR},
 };
 
+/// Off: applying a wallpaper downloads it from GitHub. The gallery switch in
+/// `WallpaperGallery.tsx` must be turned on too.
+const ENABLED: bool = false;
+
 static APPLYING: AtomicBool = AtomicBool::new(false);
 
 struct ApplyGuard;
@@ -134,6 +138,9 @@ fn apply_at(
 /// Only accepts a catalog ID, never a URL, caller-supplied path or executable.
 #[tauri::command]
 pub async fn apply_wallpaper(id: u8) -> Result<(), String> {
+    if !ENABLED {
+        return Err("Wallpaper downloads are disabled".into());
+    }
     entry(id)?;
     let guard = ApplyGuard::acquire()?;
     tauri::async_runtime::spawn_blocking(move || {

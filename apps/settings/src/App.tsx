@@ -36,7 +36,7 @@ import { Card, Row, Segmented, Select, Slider, SubRow, Toggle, VisualChoices } f
 import { DockDensityPreview, DockPreview, IslandPreview, MascotPreview, SettingIcon, SpeedPreview, ThemePreview } from "./visuals";
 import { type SectionId, SectionIcon } from "./icons";
 import { UpdateBanner } from "./UpdateBanner";
-import { WallpaperGallery } from "./WallpaperGallery";
+import { WALLPAPERS_ENABLED, WallpaperGallery } from "./WallpaperGallery";
 import { type Texts, LANGUAGE_OPTIONS, resolveLanguage, textsFor } from "./i18n";
 
 type UpdateState =
@@ -406,7 +406,7 @@ export function App() {
                   />
                 </SubRow>
               </Card>
-              <WallpaperGallery texts={t} onApplied={setWallpaper} />
+              {WALLPAPERS_ENABLED ? <WallpaperGallery texts={t} onApplied={setWallpaper} /> : null}
             </>
           ) : section === "dock" ? (
             <>

@@ -145,17 +145,13 @@ test("each section renders only its own controls, in every language and visibili
 
 const wallpaperButtons = (view) => [...elements(view.body())].filter((node) => node.type === "button" && "data-wallpaper-id" in node.props);
 
-test("the gallery bundles only offline previews and appears only inside Appearance", () => {
+test("the disabled gallery appears in no section and wallpaper names stay complete", () => {
   for (const language of Object.keys(texts)) {
     assert.equal(texts[language].wallpaperNames.length, wallpaperCount);
     for (const section of ["appearance", "dock", "windows", "menubar", "system"]) {
       const view = fixture(section, { language });
       const html = renderToStaticMarkup(view.body());
-      assert.equal((html.match(/class="wallpaper-choice"/g) ?? []).length, section === "appearance" ? wallpaperCount : 0);
-      if (section === "appearance") {
-        assert.equal((html.match(/loading="lazy"/g) ?? []).length, wallpaperCount);
-        assert.doesNotMatch(html, /https?:\/\//, "opening the gallery never loads remote images");
-      }
+      assert.equal((html.match(/class="wallpaper-choice"/g) ?? []).length, 0);
       assert.deepEqual(view.wallpaperCalls, [], "rendering must never change the desktop");
     }
   }
